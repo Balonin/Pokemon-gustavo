@@ -66,7 +66,31 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   (`cleanAvatar` recusa SVG). Fica sincronizado em todos os tokens do mesmo nome.
   O Jogador escolhe ao entrar na sala e troca depois pelo ícone no topo
 - Só o Mestre recebe `members` e `npcs` em `/api/state`
-- Nunca mova checagem de permissão para o frontend
+- **HP e estágios de batalha** (`battle` da ficha) só o Mestre altera. Jogador pode reordenar
+  as próprias fichas (`order`), e salvar uma ficha preserva `battle` e `order`
+- **Batalhas** (tabela `battles`): o Mestre cria (`POST /api/battles`) com dois lados — jogador,
+  NPC ou ele mesmo — e o time de cada um (até 6), troca o Pokémon em campo e encerra/exclui.
+  `revealed` guarda todo Pokémon que já esteve em campo
+- **Visibilidade na batalha, como nos jogos**: o jogador recebe em `/api/state` só as batalhas
+  em que luta, já filtradas por `playerBattleView` — o próprio time completo e, do adversário,
+  apenas o Pokémon em campo (espécie, nível, tipos, HP em %, estágios), o tamanho do time e
+  os já utilizados. Golpes, Status, ability, notas, ids e HP exato do outro lado nunca saem do
+  servidor. O cliente do Mestre grava `maxHp` junto do `hp` pra essa porcentagem
+- **Log da batalha** (`battle.log`, até 300 entradas): escrito **pelo servidor** a partir das ações
+  do Mestre — criação, trocas (`PATCH /api/battles/:id`), mudanças de HP/estágio
+  (`PATCH /api/pokemon/:id/battle`, via `battleChangeEvents`) e fim/reabertura. Guarda ids de
+  ficha; o jogador recebe a versão de `logForPlayer`: sem nada de Pokémon adversário que nunca
+  entrou em campo e com o HP do adversário só em %
+- **Música tema** (`members.theme` / `npcs.theme`, JSON `{ kind, ref, title }`): arquivo enviado
+  (`kind: 'file'`, bytes na tabela `media`, até 8 MB, servido em `/media/<id>` com Range), link
+  direto de áudio, YouTube, Spotify ou SoundCloud. Links passam por `parseThemeLink` no servidor
+  e os players são montados só a partir do id — nunca do link colado. Jogador só usa arquivo que
+  ele mesmo enviou; trocar/remover o tema apaga o arquivo antigo. Na arena, `syncBattleMusic`
+  reveza os temas dos dois lados (um acaba, entra o outro); com um só, repete. Sem nenhum, toca
+  `DEFAULT_BATTLE_THEME` (no `index.html`; hoje `null` — o tema padrão ainda vai ser enviado)
+- **Fim de batalha**: o Mestre escolhe o vencedor (`winner`: `a`, `b` ou `draw`). A arte de resumo
+  (`drawBattleArt`, no frontend) é desenhada em 640×360 e ampliada 2× sem suavização; os
+  Pokémon aparecem na ordem de `revealed` (ordem de entrada em campo)
 
 ## Armadilha conhecida
 
@@ -87,6 +111,10 @@ Dentro de `public/index.html`:
   em inglês; `aka` guarda o nome antigo pra fichas salvas antes continuarem resolvendo
 - `MOVES` — 937 golpes com tipo, categoria, poder, dado convertido, accuracy, prioridade
   e descrição (em inglês; não existe fonte oficial em português)
+- Abilities: cada entrada da `POKEDEX` tem `abilities` (normais) e `hidden` (a secreta, quando
+  existe), por espécie **e por forma** (Vulpix de Alola ≠ Vulpix). `ABILITIES` mapeia nome →
+  descrição (texto dos jogos, em inglês). A ficha guarda só o nome em `ability`; se o nome
+  não estiver em `ABILITIES`, é uma ability personalizada e é preservada ao trocar a espécie
 
 Sprites vêm do repositório público do PokeAPI por URL, não ficam no projeto.
 
