@@ -263,7 +263,12 @@ body.in-room { max-width: none; padding: 12px; }
   .matchup-slot { flex: none; height: 130px; }
 }
 
-.nature-table-inline { max-height: 100%; overflow-y: auto; border: 2px solid var(--outline); background: var(--panel-deep); }
+.col-stats { position: relative; }   /* anchors the open nature list */
+#natureRegion.nat-open { position: absolute; inset: 0; z-index: 6; display: flex; flex-direction: column; min-height: 240px; }
+.nature-pop { flex: 1; min-height: 0; display: flex; flex-direction: column; border: 2px solid var(--outline); background: var(--panel-deep); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55); }
+.nature-pop-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 8px; flex-shrink: 0; font-family: var(--font-pixel); font-size: 0.56rem; color: var(--gold); background: var(--panel-hi); border-bottom: 2px solid var(--outline); }
+.nature-table-inline { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.nature-table th { position: sticky; top: 0; z-index: 1; }
 .nature-table { width: 100%; border-collapse: collapse; font-size: 0.826rem; }
 .nature-table th, .nature-table td { padding: 5px 8px; border-bottom: 2px solid var(--panel-hi); text-align: left; }
 .nature-table th { font-family: var(--font-pixel); font-size: 0.614rem; background: var(--panel-hi); }
@@ -2183,13 +2188,18 @@ function renderSheet() {
 
   // Nature region
   const natEl = document.getElementById('natureRegion');
+  // The list opens over the Status column with the column's (fixed) height and scrolls inside — at its
+  // full length it didn't fit the 16:9 sheet and the last natures were cut off.
+  natEl.classList.toggle('nat-open', editingRegion === 'nature' && !mega);
   if (editingRegion === 'nature' && !mega) {
-    natEl.innerHTML = `<div class="nature-table-inline"><table class="nature-table">
+    natEl.innerHTML = `<div class="nature-pop">
+      <div class="nature-pop-head"><span>Escolha a Nature</span><button class="sb-tbtn" id="natClose" title="Fechar">✕</button></div>
+      <div class="nature-table-inline"><table class="nature-table">
       <thead><tr><th>Nature</th><th>Aumenta</th><th>Diminui</th></tr></thead>
       <tbody>${NATURES.map(n => `
         <tr class="nat-row ${n.name===draft.natureName?'selected':''}" data-name="${n.name}">
           <td>${n.name}</td><td class="up">${n.plus ? '+'+STAT_LABEL[n.plus] : '—'}</td><td class="down">${n.minus ? '-'+STAT_LABEL[n.minus] : '—'}</td>
-        </tr>`).join('')}</tbody></table></div>`;
+        </tr>`).join('')}</tbody></table></div></div>`;
     natEl.querySelectorAll('.nat-row').forEach(row => {
       row.addEventListener('click', () => {
         const n = NATURES.find(x => x.name === row.dataset.name);
@@ -2197,6 +2207,10 @@ function renderSheet() {
         editingRegion = null; renderSheet();
       });
     });
+    document.getElementById('natClose').addEventListener('click', (e) => { e.stopPropagation(); setEditing(null); });
+    // open scrolled to the current nature
+    const list = natEl.querySelector('.nature-table-inline'), sel = natEl.querySelector('.nat-row.selected');
+    if (sel) list.scrollTop += sel.getBoundingClientRect().top - list.getBoundingClientRect().top - (list.clientHeight - sel.offsetHeight) / 2;
   } else {
     const natText = draft.natureName
       ? (draft.natureUp ? `Nature: ${draft.natureName} (+${STAT_LABEL[draft.natureUp]} / -${STAT_LABEL[draft.natureDown]})` : `Nature: ${draft.natureName} (neutra)`)
