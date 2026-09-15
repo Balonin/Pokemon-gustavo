@@ -1110,6 +1110,8 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
         <button class="btn secondary small" id="maRecropBtn" hidden>✂ Ajustar enquadramento</button>
         <input type="file" id="maFile" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
         <button class="btn secondary small" id="maOfficialBtn">Usar o sprite oficial</button>
+        <label class="chk" id="maPixelRow" hidden><input type="checkbox" id="maPixel">
+          <span>Pixel art — ampliar nítida, sem suavizar. Deixe desmarcado pra ilustrações.</span></label>
         <div class="ma-note" id="maNote"></div>
       </div>
     </div>
@@ -1586,17 +1588,21 @@ function loadImageFile(file) {
 // ----- Framing an uploaded picture -----
 // The square on screen is exactly what becomes the picture: drag to move it, zoom with the slider,
 // the mouse wheel or a pinch. The picture always covers the square (no empty borders).
-// Pixel art is told apart by its few colours: enlarged it is never smoothed (stays crisp) and it is
-// saved losslessly (PNG). Smoothing is only used to shrink, or to enlarge a photo.
+// A picture with few colours (pixel art, flat illustrations) is saved losslessly (PNG). Everything is
+// smoothed by default — flat official artwork also has few colours and must not look blocky. Only a small
+// few-colour picture (a sprite, up to PIXEL_ART_MAX_SIDE px across the square) is taken as pixel art and
+// enlarged crisp; the ficha's picture window has a switch to change it either way.
 // One editor (#avCrop) serves the trainer's avatar and the ficha's picture: `opts` says where it shows
 // (host), what it replaces meanwhile (hide), the size it makes (`size`, or the picture's own pixels up to
 // `max`) and what to do with the result.
-let crop = null;   // { img, w, h, s (screen px per picture px), x, y (picture's corner on the square), min, max, pointers, pixel, opts }
+let crop = null;   // { img, w, h, s (screen px per picture px), x, y (picture's corner on the square), min, max, pointers, fewColors, opts }
 const cropCanvas = () => document.getElementById('cropCanvas');
 const PIXEL_ART_COLORS = 1200;
-// Pixel art has a few hundred colours at most; photos and painted art have thousands. Counted on a copy of
-// at most 256 px (nearest neighbour, so no new colours appear), skipping almost transparent pixels.
-function looksLikePixelArt(img) {
+const PIXEL_ART_MAX_SIDE = 200;
+// Pixel art and flat artwork have a few hundred colours at most; photos and painted art have thousands.
+// Counted on a copy of at most 256 px (nearest neighbour, so no new colours appear), skipping almost
+// transparent pixels.
+function hasFewColors(img) {
   if (img._pixel !== undefined) return img._pixel;
   const k = Math.min(1, 256 / Math.max(img.naturalWidth, img.naturalHeight));
   const w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
@@ -1615,8 +1621,10 @@ function looksLikePixelArt(img) {
   img._pixel = pixel;
   return pixel;
 }
-// drawing at `scale` (new size ÷ picture size): smooth to shrink, or to enlarge a photo; pixel art enlarges crisp
-function cropSmoothAt(scale) { return scale < 1 || !crop.pixel; }
+// taken as pixel art (enlarged crisp): few colours and small — a sprite, not an illustration
+function cropIsPixel() { return crop.fewColors && cropRegion().side <= PIXEL_ART_MAX_SIDE; }
+// drawing at `scale` (new size ÷ picture size): smooth to shrink, and to enlarge anything but pixel art
+function cropSmoothAt(scale) { return scale < 1 || !cropIsPixel(); }
 const AVATAR_CROP = {
   size: 96, host: 'avCropHost', hide: 'avEditor',
   onApply: (data, state) => { if (!avatarCtx) return; avatarCtx.avatar = data; avatarCtx.crop = state; renderAvatarPreview(); }
@@ -1632,7 +1640,7 @@ function openCrop(img, state, opts) {
   const w = img.naturalWidth, h = img.naturalHeight;
   const min = S / Math.min(w, h);                              // the picture's short side fills the square
   const max = Math.max(min, Math.min(min * 10, S / 8));        // up to 10×, but always at least 8 picture px across
-  crop = { img, w, h, min, max, pointers: new Map(), s: min, x: (S - w * min) / 2, y: (S - h * min) / 2, opts, pixel: looksLikePixelArt(img) };
+  crop = { img, w, h, min, max, pointers: new Map(), s: min, x: (S - w * min) / 2, y: (S - h * min) / 2, opts, fewColors: hasFewColors(img) };
   if (state && state.S) {   // re-framing: same framing as before, in this square's pixels
     const k = S / state.S;
     Object.assign(crop, { s: state.s * k, x: state.x * k, y: state.y * k });
@@ -1710,7 +1718,7 @@ function cropExport() {
   const c = document.createElement('canvas');
   c.width = c.height = crop.opts.size || Math.min(side, crop.opts.max);
   renderCropTo(c);
-  if (crop.pixel) return c.toDataURL('image/png');   // lossless: pixel art keeps every pixel
+  if (crop.fewColors) return c.toDataURL('image/png');   // lossless: pixel art / flat art keep every pixel
   const data = c.toDataURL('image/webp', 0.92);
   return data.startsWith('data:image/webp') ? data : c.toDataURL('image/png');
 }
@@ -1719,7 +1727,7 @@ function cropExport() {
 function applyCrop() {
   if (!crop) return;
   const data = cropExport(), opts = crop.opts;
-  const state = { img: crop.img, s: crop.s, x: crop.x, y: crop.y, S: cropCanvas().width, pixel: crop.pixel };
+  const state = { img: crop.img, s: crop.s, x: crop.x, y: crop.y, S: cropCanvas().width, pixel: cropIsPixel() };
   closeCrop();
   opts.onApply(data, state);
 }
@@ -2638,6 +2646,9 @@ function renderMonArtModal() {
     ? `<img src="${esc(src)}" alt=""${custom && !custom.pixel ? ' class="smooth"' : ''}>` : '<span class="ph-letter">?</span>';
   document.getElementById('maRecropBtn').hidden = !(monArtCtx.art && monArtCtx.art.data && monArtCtx.crop);
   document.getElementById('maOfficialBtn').hidden = !monArtCtx.art;
+  // how it is enlarged: set on upload (only small sprites are pixel art) and changeable, even once saved
+  document.getElementById('maPixelRow').hidden = !monArtCtx.art;
+  document.getElementById('maPixel').checked = !!(monArtCtx.art && monArtCtx.art.pixel);
   const fallback = monArtCtx.target === 'base' ? 'Usando o sprite oficial.'
     : (draft.mega === BATTLE_BOUND ? 'Sem imagem própria: usa a imagem do Pokémon.' : 'Sem imagem própria: usa o sprite oficial da Mega.');
   document.getElementById('maNote').textContent = monArtCtx.art
@@ -4866,6 +4877,11 @@ async function init() {
   });
   document.getElementById('maRecropBtn').addEventListener('click', () => { if (monArtCtx && monArtCtx.crop) openCrop(monArtCtx.crop.img, monArtCtx.crop, MON_ART_CROP); });
   document.getElementById('maOfficialBtn').addEventListener('click', () => { if (monArtCtx) { monArtCtx.art = null; monArtCtx.crop = null; renderMonArtModal(); } });
+  document.getElementById('maPixel').addEventListener('change', (e) => {
+    if (!monArtCtx || !monArtCtx.art) return;
+    monArtCtx.art = { ...monArtCtx.art, pixel: e.target.checked };
+    renderMonArtModal();
+  });
   document.getElementById('maCancelBtn').addEventListener('click', closeMonArtModal);
   document.getElementById('maOkBtn').addEventListener('click', applyMonArt);
   document.getElementById('monArtModal').addEventListener('click', (e) => { if (e.target.id === 'monArtModal') closeMonArtModal(); });

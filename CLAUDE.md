@@ -57,11 +57,13 @@ Os Status são HP, ATK, DEF, SPA, SPD, SPE.
   `customArtOf`; Mega ativa: a imagem da Mega, senão sprite da Mega oficial / imagem do Pokémon no Battle
   Bound; na visão pública vai já escolhida como `art` no `seen`, por `artShownFor`); a arena continua com o
   sprite oficial.
-  **Qualidade**: pixel art é reconhecida pelo número de cores (`looksLikePixelArt`, ≤ 1200) e sai em PNG,
-  com os pixels originais (recorte alinhado a pixels inteiros, sem redimensionar até 1024 px) e exibida sem
-  suavização; ilustrações/fotos saem em WebP (até 1024 px) e suavizadas. Suavização só ao reduzir ou ao
-  ampliar foto (`cropSmoothAt`). Na arte de fim de batalha, pixel art entra no desenho de 640×360 como os
-  sprites; ilustração é pintada **depois** da ampliação 2×, na resolução final (`overlays` em `drawBattleArt`)
+  **Qualidade**: o recorte é alinhado a pixels inteiros e guardado no tamanho original (até 1024 px). Poucas
+  cores (`hasFewColors`, ≤ 1200: pixel art ou arte chapada) → PNG sem perda; muitas → WebP. **Tudo é suave
+  por padrão** (arte oficial chapada também tem poucas cores e não pode ficar em blocos); só um sprite
+  pequeno (poucas cores e até 200 px no recorte, `cropIsPixel`) é pixel art — ampliado nítido. O `pixel` da
+  imagem dá pra trocar na janela (controle "Pixel art"), inclusive numa imagem já salva. Na arte de fim de
+  batalha, pixel art entra no desenho de 640×360 como os sprites; o resto é pintado **depois** da ampliação
+  2×, na resolução final (`overlays` em `drawBattleArt`)
 - **HP em batalha** = Status de HP × 2
 - **Margem de crítico** = 10% do Status (mesmo arredondamento)
 - **Estágios de Status**: cada estágio vale 10% do Status original, limite de ±6.
