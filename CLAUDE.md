@@ -35,13 +35,17 @@ Os Status são HP, ATK, DEF, SPA, SPD, SPE.
   ou se o treinador marcar `committed` (decidiu nunca mais evoluir)
 - **Lendários/Pseudo-lendários**: recebem +15 em vez de +10 no total
 - **Teto**: nenhum Status passa de **90** — exceto o **HP, que não tem teto**
-- **Mega / Battle Bound** (`mega` na ficha): depois da distribuição, **+10% em cada Status**
-  (inclusive HP), com o arredondamento do crítico (`roundStatus`), e o teto vira **95** (HP segue
-  sem teto). Ex.: 90 → 90 + 9 = 99 → 95; 85 → 85 + 8 = 93. Tudo em `finalStatsFor`
+- **Mega / Battle Bound** (só enquanto ativa na batalha): depois da distribuição, **+10% em cada
+  Status** (inclusive HP), com o arredondamento do crítico (`roundStatus`), e o teto vira **95** (HP
+  segue sem teto). Ex.: 90 → 90 + 9 = 99 → 95; 85 → 85 + 8 = 93. Tudo em `finalStatsFor`
+  (`megaFormOf(m)` diz se está ativa)
 - **HP em batalha** = Status de HP × 2
 - **Margem de crítico** = 10% do Status (mesmo arredondamento)
 - **Estágios de Status**: cada estágio vale 10% do Status original, limite de ±6.
-  HP não recebe estágio.
+  HP não recebe estágio. Na arena cada caixa mostra o Status normal e o que os estágios somam
+  ("60 +6"), com o número de estágios embaixo e, no canto, a margem de crítico — que **não muda
+  com os estágios** (sempre 10% do Status normal; a Mega ativa muda, porque muda o próprio Status).
+  A caixa de HP só tem Status e margem
 - **Dado de dano de um golpe** = poder do jogo ÷ 2, arredondado para baixo
   (ex: Tackle 40 → 1d20)
 - **Accuracy**: acerta tirando ≤ (Status × accuracy do golpe) num d100
@@ -95,7 +99,8 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   e os players são montados só a partir do id — nunca do link colado. Jogador só usa arquivo que
   ele mesmo enviou; trocar/remover o tema apaga o arquivo antigo. Na arena, `syncBattleMusic`
   reveza os temas dos dois lados (um acaba, entra o outro); com um só, repete. Sem nenhum, toca
-  `DEFAULT_BATTLE_THEME` (no `index.html`; hoje `null` — o tema padrão ainda vai ser enviado)
+  `DEFAULT_BATTLE_THEME` (no `index.html`): a música de batalha contra treinador de Diamond/Pearl/
+  Platinum, no YouTube (`qtzPna9yFjg`)
 - **HP depois da batalha**: ao encerrar, o servidor guarda em `battle.final` o `battle` (HP/estágios)
   de cada Pokémon dos dois times e **cura as fichas** pra próxima batalha — exceto as que ainda
   estão em outra batalha em andamento. A batalha encerrada é exibida a partir de `final`
@@ -116,15 +121,24 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   batalha**), encerra com `{ end: true }` (HP volta pela metade, arredondando pra cima) ou desfaz com
   `{ clear: true }`; trocar o Pokémon também encerra. O estado fica em `battle.dmax` da ficha
   (`'dmax'`/`'gmax'`, que faz `maxHpOf` dobrar) e em `battle.dmax[side]` da batalha. Pode junto com o
-  Tera (e com a Mega, quando existir). Visual: Gigantamax usa o sprite oficial com aura vermelha;
+  Tera e com a Mega. Visual: Gigantamax usa o sprite oficial com aura vermelha;
   Dynamax comum fica 28% maior com aura vermelha
-- **Mega Evolução / Battle Bound**: botão com o símbolo da Mega no topo da ficha (todos os Pokémon).
-  `mega` = `''`, o nome de uma Mega oficial (`'Mega Charizard X'`) ou `'bb'` (Battle Bound: a Mega do
-  RPG, com golpe e passiva de assinatura criados à mão nos campos que já existem — não puxa nada).
-  Mega oficial (tabela `MEGA`, 97 formas do PokeAPI) troca **tipos, ability e sprite**; `megaBase`
-  guarda o que volta ao desligar. 9 Megas novas não têm ability no PokeAPI (mantém a do Pokémon) e
-  a Mega Zygarde não tem sprite. `spriteIdOf(m)` é quem decide o sprite (Mega → id da forma). O
-  adversário vê a Mega (`fieldView.mega`). Pode junto com Tera e Dynamax
+- **Mega Evolução / Battle Bound**: o botão com o símbolo da Mega no topo da ficha (todos os
+  Pokémon) só **escolhe qual Mega a ficha pode usar** — `mega` = `''`, o nome de uma Mega oficial
+  (`'Mega Charizard X'`) ou `'bb'` (Battle Bound: a Mega do RPG, com golpe e passiva de assinatura
+  criados à mão nos campos que já existem — não puxa nada). A ficha fica sempre na forma normal.
+  **Quem ativa é o Mestre, na batalha**: `PATCH /api/battles/:id { mega: { side, monId, t1, t2,
+  ability, hp, maxHp } }` (só o Pokémon em campo, **uma por lado por batalha**, desfazível com
+  `{ side, clear: true, hp, maxHp }`). Ativa, fica em `battle.mega = { form, t1, t2, ability }` da
+  ficha (tipos/ability só da Mega oficial, que vêm da tabela `MEGA` do cliente) e em
+  `battle.mega[side] = { mon, form }` da batalha; o HP ganha o que o +10% acrescenta
+  (`megaHpFields`). Continua ativa ao trocar (como nos jogos); "Restaurar" mantém; a cura de fim de
+  batalha tira. Mega oficial (97 formas do PokeAPI) troca **tipos, ability e sprite** enquanto ativa
+  (`battleTypesOf`, `battleAbilityOf`, `spriteIdOf`). 9 Megas novas não têm ability no PokeAPI (mantém
+  a do Pokémon) e a Mega Zygarde não tem sprite. O adversário só fica sabendo da Mega depois de
+  ativada (`fieldView.megaActive`). Pode junto com Tera e Dynamax. Fichas antigas salvas com a Mega
+  "ligada" (tipos trocados, originais em `megaBase`) são lidas de volta na forma normal
+  (`withoutLegacyMega`, e `typesInBattle` no servidor)
 - **Condições de status**: `battle.status` na ficha (`brn`, `par`, `slp`, `psn`, `tox`, `frz`) e
   `battle.confused` (acumula). Só o Mestre altera (é o mesmo `battle` do HP), aparecem pro
   adversário e no log, e somem no "Restaurar" e na cura de fim de batalha

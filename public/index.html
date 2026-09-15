@@ -353,7 +353,13 @@ body.in-room { max-width: none; padding: 12px; }
 .header-row .editable { flex: 1; min-width: 0; }
 .mega-btn { flex-shrink: 0; width: 30px; height: 30px; padding: 3px; margin-top: 2px; cursor: pointer; border: 2px solid var(--outline); background: var(--panel-deep); filter: grayscale(1) brightness(0.8); }
 .mega-btn:hover { filter: none; }
-.mega-btn.on, .mega-btn.open { filter: none; background: #3a2a4a; box-shadow: 0 0 0 2px #f8d030, 0 0 8px #f85888; }
+.mega-btn.has { filter: none; background: #3a2a4a; }   /* a Mega is chosen (it only activates in battle) */
+.mega-btn.open { filter: none; background: #3a2a4a; box-shadow: 0 0 0 2px #f8d030, 0 0 8px #f85888; }
+.mini-btn.mega-act { display: inline-flex; align-items: center; gap: 5px; border-color: #f8d030; color: #fff; background: #3a2a4a; }
+.mini-btn.mega-act:hover { background: #5a3a6e; box-shadow: 0 0 6px #f85888; }
+.mini-btn.mega-act .mega-icon { width: 13px; height: 13px; }
+.log-line .log-mega { color: #f8d030; }
+.mega-preview b { color: var(--ink); font-weight: normal; }
 .mega-icon { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
 .tp-head .mega-icon { display: inline-block; width: 13px; height: 13px; vertical-align: -2px; margin-right: 4px; }
 .mega-tag { font-family: var(--font-pixel); font-size: 0.5rem; color: #f8d030; }
@@ -368,7 +374,6 @@ body.in-room { max-width: none; padding: 12px; }
 .mega-meta .badge { margin: 0; font-size: 0.5rem; padding: 1px 4px; }
 .mega-ab { color: var(--gold); }
 .mega-rule { margin-top: 8px; font-size: 0.66rem; line-height: 1.4; color: var(--ink-soft); }
-.art-frame img.mega { filter: drop-shadow(0 0 2px #f8d030) drop-shadow(0 0 6px #f85888); }
 .cond.mega { background: linear-gradient(90deg, #f85888, #f8a030, #f8d030, #78c850, #40b8e8, #a070f0); color: #fff; }
 .spr.mega { filter: drop-shadow(0 0 2px #f8d030) drop-shadow(0 0 6px #f85888); }
 
@@ -534,7 +539,7 @@ body.in-room { max-width: none; padding: 12px; }
 .hb-num { font-size: 0.6rem; flex-shrink: 0; }
 
 .bt-panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.bt-panel { --fill: var(--panel); --edge: #5a6a7a; padding: 14px 15px; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.bt-panel { --fill: var(--panel); --edge: #5a6a7a; padding: 14px 15px; display: flex; flex-direction: column; gap: 9px; min-width: 0; container-type: inline-size; }
 .bt-panel.empty { color: var(--ink-soft); font-size: 0.8rem; justify-content: center; text-align: center; min-height: 120px; }
 .bp-head { font-family: var(--font-pixel); font-size: 0.56rem; color: var(--ink-soft); }
 .bp-head span { color: #fff; }
@@ -568,11 +573,27 @@ body.in-room { max-width: none; padding: 12px; }
 .mini-btn { border: 2px solid var(--outline); background: var(--panel-hi); color: var(--ink); cursor: pointer; font-family: var(--font-pixel); font-size: 0.66rem; padding: 7px 9px; }
 .mini-btn:hover { background: var(--red); color: #fff; }
 .mini-btn.heal:hover { background: var(--green); }
-.bt-stages { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
-.bt-stage { text-align: center; border: 2px solid var(--outline); background: var(--panel-deep); padding: 6px 3px; }
+/* HP + the five stage stats in one row; a narrow panel puts them in two rows of three */
+.bt-stages { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 5px; }
+@container (max-width: 432px) { .bt-stages { grid-template-columns: repeat(3, minmax(0, 1fr)); } }   /* 6 × 68px boxes: name + a 2-digit margin */
+.bt-stage { container-type: inline-size; text-align: center; border: 2px solid var(--outline); background: var(--panel-deep); padding: 5px 3px 6px; }
+.bt-stage .shead { display: flex; align-items: center; justify-content: space-between; gap: 3px; padding-left: 2px; }
 .bt-stage .sname { font-family: var(--font-pixel); font-size: 0.56rem; color: var(--ink-soft); }
+/* crit margin, the same gold tag as on the sheet */
+.bt-stage .scrit { font-family: var(--font-pixel); font-size: 0.5rem; line-height: 1; padding: 2px 3px; border: 2px solid var(--outline); background: var(--panel); color: var(--gold); }
 .bt-stage .sval { font-family: var(--font-pixel); font-size: 0.82rem; margin: 4px 0 2px; }
-.bt-stage .sstage { font-size: 0.72rem; height: 15px; }
+/* "60 +6": the box follows its own width — narrower boxes shorten "estágio" (then drop it) and put
+   the delta under the value (every box keeps that line, so the − / + buttons stay aligned) */
+.bt-stage .sval { white-space: nowrap; }
+.bt-stage .sdelta { font-size: 0.6rem; margin-left: 4px; }
+.bt-stage .sdelta:empty { margin: 0; }
+.bt-stage .sdelta.up { color: var(--green); }
+.bt-stage .sdelta.down { color: #e86050; }
+.bt-stage .sstage { font-size: 0.66rem; height: 15px; white-space: nowrap; }
+.bt-stage .sst-a { display: none; }
+@container (max-width: 74px) { .bt-stage .sst-w { display: none; } .bt-stage .sst-a { display: inline; } }
+@container (max-width: 51px) { .bt-stage .sst-a { display: none; } }
+@container (max-width: 60px) { .bt-stage .sdelta, .bt-stage .sdelta:empty { display: block; height: 10px; margin: 3px 0 0; } }
 .bt-stage .sstage.up { color: var(--green); }
 .bt-stage .sstage.down { color: #e86050; }
 .bt-stage .srow { display: flex; gap: 3px; justify-content: center; margin-top: 4px; }
@@ -938,31 +959,51 @@ const GMAX = {
   'Urshifu (Estilo Golpe Fluido)': [10227, 'G-Max Rapid Flow', 'Água']
 };
 // ----- Mega Evolution / Battle Bound -----
-// A ficha's `mega`: '' (none), the name of an official Mega ('Mega Charizard X') or 'bb' — Battle Bound,
-// the RPG's own Mega (signature move + passive, made by hand with the custom move/ability fields).
-// Either way: +10% on every Status after distribution (crit rounding), cap 95 instead of 90.
-// Official Megas also take their types, ability and sprite; `megaBase` keeps what comes back when
-// the Mega is turned off.
+// A ficha's `mega` is only which Mega it can use: '' (none), the name of an official Mega
+// ('Mega Charizard X') or 'bb' — Battle Bound, the RPG's own Mega (signature move + passive, made by
+// hand with the custom move/ability fields). The ficha itself stays in its base form: the GM activates
+// the Mega in battle (one per trainer per battle, like the games), and while it's active the ficha's
+// battle state has `mega = { form, t1, t2, ability }` (types/ability only for official Megas).
+// Active: +10% on every Status after distribution (crit rounding), cap 95 instead of 90; official
+// Megas also take their types, ability and sprite.
 const BATTLE_BOUND = 'bb';
 function megaOptions(species) {
   const dex = DEX_BY_NAME[(species || '').toLowerCase()];
   return dex && !dex.species ? MEGA[dex.name] || [] : [];   // forms (Alola etc.) have no Mega
 }
 function megaOption(species, mega) { return megaOptions(species).find(o => o.name === mega) || null; }
-function megaLabel(m) { return m.mega === BATTLE_BOUND ? 'Battle Bound' : (m.mega || ''); }
-// sprite id: the official Mega's when Mega-evolved (if PokeAPI has it), else the Pokémon's own
+function megaLabel(form) { return form === BATTLE_BOUND ? 'Battle Bound' : (form || ''); }
+// the Mega a Pokémon is using right now ('' if none): from its battle state or, for the opponent's
+// Pokémon as a player sees it, from its field view
+function megaFormOf(m) {
+  if (!m) return '';
+  if (m.megaActive !== undefined) return m.megaActive || '';
+  const bm = (m.battle || {}).mega;
+  return bm && bm.form ? bm.form : '';
+}
+// types and ability in battle: an official Mega's while it is active
+function battleTypesOf(m) {
+  const bm = (m.battle || {}).mega;
+  return bm && bm.form && bm.t1 ? [bm.t1, bm.t2 || ''] : [m.type1, m.type2 || ''];
+}
+function battleAbilityOf(m) {
+  const bm = (m.battle || {}).mega;
+  return (bm && bm.form && bm.ability) || m.ability || '';
+}
+// sprite id: the official Mega's while Mega-evolved (if PokeAPI has it), else the Pokémon's own
 function spriteIdOf(m) {
-  const opt = m.mega && m.mega !== BATTLE_BOUND ? megaOption(m.species, m.mega) : null;
+  const form = megaFormOf(m);
+  const opt = form && form !== BATTLE_BOUND ? megaOption(m.species, form) : null;
   if (opt && opt.id) return opt.id;
   return (DEX_BY_NAME[(m.species || '').toLowerCase()] || {}).id;
 }
-function setMega(value) {
-  if (draft.megaBase) { Object.assign(draft, draft.megaBase); draft.megaBase = null; }   // back to the base form first
-  draft.mega = value || '';
-  if (!value) return;
-  draft.megaBase = { ability: draft.ability, type1: draft.type1, type2: draft.type2 };
-  const opt = megaOption(draft.species, value);
-  if (opt) { draft.type1 = opt.t1; draft.type2 = opt.t2 || ''; if (opt.ability) draft.ability = opt.ability; }
+// Fichas saved while picking a Mega still switched on its types/ability (with the originals in
+// `megaBase`): read them back in their base form.
+function withoutLegacyMega(p) {
+  if (!p || !p.megaBase) return p;
+  const { megaBase, ...rest } = p;
+  return { ...rest, type1: megaBase.type1 || rest.type1, type2: megaBase.type2 || '',
+    ability: megaBase.ability !== undefined ? megaBase.ability : rest.ability };
 }
 // the Mega Evolution symbol in pixel art: a rainbow Key Stone with a white double helix
 const MEGA_ICON = (() => {
@@ -1288,7 +1329,7 @@ function blankDraft() {
     natureName: '', natureUp: null, natureDown: null,
     base100: {hp:20,atk:20,def:20,spa:20,spd:20,spe:20}, stage: 0, maxStage: 2, committed: false,
     legendary: false, distributed: {hp:0,atk:0,def:0,spa:0,spd:0,spe:0},
-    ability: '', moves: [], shiny: false, notes: '', teraType: '', mega: '', megaBase: null
+    ability: '', moves: [], shiny: false, notes: '', teraType: '', mega: ''
   };
 }
 
@@ -1338,7 +1379,7 @@ function finalStatsFor(m) {
   STAT_KEYS.forEach(k => {
     let v = fixed[k] + (d[k] || 0);
     if (k !== 'hp') v = Math.min(90, v);            // HP has no cap
-    if (m.mega) {                                   // Mega / Battle Bound: +10% after distribution, cap 95
+    if (megaFormOf(m)) {                            // active Mega / Battle Bound: +10% after distribution, cap 95
       v += roundStatus(v * 0.1);
       if (k !== 'hp') v = Math.min(95, v);
     }
@@ -1379,6 +1420,7 @@ function openSheet(mon, ownerKey) {
   // missing fields (old or partial fichas) fall back to the blank ficha's defaults
   draft = mon ? { ...blankDraft(), ...JSON.parse(JSON.stringify(mon)) } : blankDraft();
   if (!draft.distributed) draft.distributed = blankDraft().distributed;
+  delete draft.battle;   // the sheet is the ficha: never shows it Mega-evolved (saving leaves the battle state alone)
   if (!mon) draft._owner = ownerKey || currentTrainer;
   if (isGM() && !battleMode) selectedTrainerKey = mon ? mon.owner : draft._owner;   // keep the rail on this ficha's trainer
   draftId = mon ? mon.id : null;
@@ -1433,7 +1475,8 @@ function teraChipHtml() {
   const t = draft.teraType || draft.type1 || 'Normal';
   return `<button class="tera-chip${editingRegion === 'tera' ? ' open' : ''}" id="teraChip" style="--tc:${TERA_COLORS[t] || '#5fb8c8'}" title="Tipo Tera — clique pra escolher"><span class="tera-gem">◆</span>Tera ${esc(t)}</button>`;
 }
-// Mega picker: none, the species' official Mega(s), or Battle Bound (any Pokémon)
+// Mega picker: which Mega the ficha can use — none, the species' official Mega(s), or Battle Bound
+// (any Pokémon). Choosing doesn't activate anything: the GM activates it in battle.
 function renderMegaPicker() {
   const picker = document.getElementById('megaPicker');
   picker.hidden = editingRegion !== 'mega';
@@ -1441,6 +1484,9 @@ function renderMegaPicker() {
   const opts = megaOptions(draft.species);
   const cur = draft.mega || '';
   const typeBadges = o => [o.t1, o.t2].filter(Boolean).map(t => `<span class="badge" style="background:${TYPE_COLORS[t]};color:#fff;">${esc(t)}</span>`).join('');
+  // what its Status become while the Mega is active (the same +10% for any of them)
+  const boosted = finalStatsFor({ ...draft, battle: { mega: { form: cur || BATTLE_BOUND } } });
+  const preview = ['hp', 'spe', 'atk', 'spa', 'def', 'spd'].map(k => `${STAT_LABEL[k]} <b>${boosted[k]}</b>`).join(' · ');
   picker.innerHTML = `<div class="tp-head"><span>${MEGA_ICON} Mega Evolução</span><button class="tp-close" data-close title="Fechar">✕</button></div>
     <div class="mega-opts">
       <button class="mega-opt${!cur ? ' sel' : ''}" data-mega=""><b>Sem Mega</b></button>
@@ -1450,8 +1496,10 @@ function renderMegaPicker() {
       <button class="mega-opt${cur === BATTLE_BOUND ? ' sel' : ''}" data-mega="${BATTLE_BOUND}"><b>Battle Bound</b>
         <span class="mega-meta">Golpe e passiva de assinatura: crie nos golpes e na ability (campo "Outra")</span></button>
     </div>
-    <div class="mega-rule">+10% em todos os Status depois da distribuição (arredondamento do crítico) · teto 95 · HP sem teto${opts.length ? '' : ' · esta espécie não tem Mega oficial'}</div>`;
-  picker.querySelectorAll('[data-mega]').forEach(btn => btn.addEventListener('click', () => { setMega(btn.dataset.mega); setEditing(null); }));
+    <div class="mega-rule">A ficha fica na forma normal: a Mega só entra quando o Mestre ativa na batalha (uma por treinador em cada batalha).
+      Ativa: +10% em todos os Status depois da distribuição (arredondamento do crítico) · teto 95 · HP sem teto${opts.length ? '' : ' · esta espécie não tem Mega oficial'}</div>
+    <div class="mega-rule mega-preview">Com a Mega ativa: ${preview}</div>`;
+  picker.querySelectorAll('[data-mega]').forEach(btn => btn.addEventListener('click', () => { draft.mega = btn.dataset.mega; setEditing(null); }));
   picker.querySelector('[data-close]').addEventListener('click', () => setEditing(null));
 }
 
@@ -1468,11 +1516,8 @@ function renderTeraPicker() {
 
 function applySpeciesToDraft(name) {
   const dex = DEX_BY_NAME[name.trim().toLowerCase()];
-  // another species: its Mega (if any) no longer applies
-  if (dex && dex.name.toLowerCase() !== (draft.species || '').trim().toLowerCase() && draft.mega) {
-    if (draft.megaBase) Object.assign(draft, draft.megaBase);
-    draft.mega = ''; draft.megaBase = null;
-  }
+  // another species: an official Mega it can't use is dropped (Battle Bound works for any Pokémon)
+  if (dex && draft.mega && draft.mega !== BATTLE_BOUND && !megaOption(dex.name, draft.mega)) draft.mega = '';
   draft.species = name;
   if (dex) {
     draft._dexId = dex.id;
@@ -1500,9 +1545,9 @@ function renderSheet() {
 
   // Artwork
   const artFrame = document.getElementById('artFrame');
-  const dexId = spriteIdOf(draft);   // the Mega's sprite when Mega-evolved
+  const dexId = spriteIdOf(draft);   // always the base form: the Mega only shows up in battle
   const imgSrc = dexId ? spriteImg(dexId, draft.shiny) : null;
-  artFrame.innerHTML = imgSrc ? `<img src="${imgSrc}" alt=""${draft.mega ? ' class="mega"' : ''}>` : `<span class="ph-letter">${(draft.nickname||draft.species||'?').charAt(0).toUpperCase()}</span>`;
+  artFrame.innerHTML = imgSrc ? `<img src="${imgSrc}" alt="">` : `<span class="ph-letter">${(draft.nickname||draft.species||'?').charAt(0).toUpperCase()}</span>`;
   document.getElementById('shinyBtn').className = 'shiny-btn' + (draft.shiny ? ' active' : '');
 
   document.getElementById('typeBadges').innerHTML = [draft.type1, draft.type2].filter(Boolean).map(t => `<span class="badge" style="background:${TYPE_COLORS[t]||'var(--panel-alt)'};color:#fff;">${t}</span>`).join('') + teraChipHtml();
@@ -1538,9 +1583,9 @@ function renderSheet() {
       <div class="header-row">
         <div class="editable" id="headerDisplay">
           <div class="header-name">${esc(draft.nickname || draft.species || 'Nova Ficha')}</div>
-          <div class="header-sub">${draft.species && draft.nickname ? `(${esc(draft.species)}) · ` : ''}Lvl ${draft.level}${draft.legendary ? ' · ⭐ Lendário/Pseudo' : ''}${draft.mega ? ` · <span class="mega-tag">${esc(megaLabel(draft))}</span>` : ''}</div>
+          <div class="header-sub">${draft.species && draft.nickname ? `(${esc(draft.species)}) · ` : ''}Lvl ${draft.level}${draft.legendary ? ' · ⭐ Lendário/Pseudo' : ''}${draft.mega ? ` · <span class="mega-tag" title="Ativada pelo Mestre na batalha">${esc(megaLabel(draft.mega))}</span>` : ''}</div>
         </div>
-        <button class="mega-btn${draft.mega ? ' on' : ''}${editingRegion === 'mega' ? ' open' : ''}" id="megaBtn" title="Mega Evolução / Battle Bound">${MEGA_ICON}</button>
+        <button class="mega-btn${draft.mega ? ' has' : ''}${editingRegion === 'mega' ? ' open' : ''}" id="megaBtn" title="Mega Evolução / Battle Bound — escolher qual (ativa só na batalha)">${MEGA_ICON}</button>
       </div>
     `;
     document.getElementById('headerDisplay').addEventListener('click', () => setEditing('header'));
@@ -1548,7 +1593,7 @@ function renderSheet() {
   }
 
   // Points banner
-  document.getElementById('pointsBanner').textContent = `Pontos livres pra distribuir: ${remaining}${draft.mega ? ' · Mega +10%' : ''}`;
+  document.getElementById('pointsBanner').textContent = `Pontos livres pra distribuir: ${remaining}`;
   renderMegaPicker();
 
   // Stats grid
@@ -1841,7 +1886,7 @@ async function saveSheet() {
     base100: draft.base100, stage: draft.stage, maxStage: draft.maxStage, committed: draft.committed,
     legendary: draft.legendary, distributed: draft.distributed, ability: draft.ability, notes: draft.notes || '',
     moves: (draft.moves || []).map(m => ({...m})), shiny: !!draft.shiny, teraType: draft.teraType || '',
-    mega: draft.mega || '', megaBase: draft.megaBase || null,
+    mega: draft.mega || '',
     updatedAt: new Date().toISOString()
   };
   try {
@@ -1918,11 +1963,32 @@ function setBattleFlags(monId, change) {
 function setStatus(monId, s) {
   setBattleFlags(monId, bt => { if (bt.status === s) delete bt.status; else bt.status = s; });   // same button again = cure
 }
+// "Restaurar": full HP, stages/status cleared; a running Dynamax or Mega stays on
+function restoredBattle(m) {
+  const { dmax, mega } = m.battle || {};
+  return { hp: maxHpOf(m), maxHp: maxHpOf(m), stages: {}, ...(dmax ? { dmax } : {}), ...(mega ? { mega } : {}) };
+}
 function resetMon(monId) {
   const m = allMons.find(x => x.id === monId);
   if (!m) return;
-  const dmax = (m.battle || {}).dmax;
-  patchBattle(monId, { battle: { hp: maxHpOf(m), maxHp: maxHpOf(m), stages: {}, ...(dmax ? { dmax } : {}) } });
+  patchBattle(monId, { battle: restoredBattle(m) });
+}
+// HP when the Mega turns on or off: the +10% HP comes (or goes) and the damage already taken stays
+function megaHpFields(m, on) {
+  const after = { ...m, battle: { ...(m.battle || {}) } };
+  if (on) after.battle.mega = { form: m.mega || BATTLE_BOUND }; else delete after.battle.mega;
+  const oldMax = maxHpOf(m), newMax = maxHpOf(after);
+  const bt = m.battle || {};
+  if (bt.hp === undefined || bt.hp === null) return { maxHp: newMax };   // full stays full
+  const hp = curHpOf(m);
+  return { maxHp: newMax, hp: hp <= 0 ? 0 : Math.max(1, Math.min(newMax, hp + newMax - oldMax)) };
+}
+function battleMega(side, monId, on) {
+  const m = monById(monId);
+  if (!m) return;
+  if (!on) { patchBattleRoom({ mega: { side, clear: true, ...megaHpFields(m, false) } }); return; }
+  const opt = m.mega !== BATTLE_BOUND ? megaOption(m.species, m.mega) : null;   // official: its types and ability
+  patchBattleRoom({ mega: { side, monId, ...(opt ? { t1: opt.t1, t2: opt.t2 || '', ability: opt.ability || '' } : {}), ...megaHpFields(m, true) } });
 }
 
 function hpColor(pct) { return pct > 50 ? 'var(--hp-green)' : (pct > 20 ? '#f8d030' : '#f85038'); }
@@ -1981,7 +2047,7 @@ function battleSpriteHtml(m, back, cls, tera, dmax) {
   // sprite, made a bit bigger with the red aura.
   const g = dmax === 'gmax' ? gmaxOf(m) : null;
   if (dmax) cls += g ? ' gmax' : ' dmax';
-  if (m.mega) cls += ' mega';
+  if (megaFormOf(m)) cls += ' mega';
   const dexId = g ? g[0] : dexIdOf(m);
   if (!dexId) return `<div class="${cls} spr-ph"${glow}>${esc((m.nickname || m.species || '?').charAt(0).toUpperCase())}</div>`;
   const front = spriteImg(dexId, m.shiny);
@@ -2086,11 +2152,11 @@ function fieldInfo(m, tera) {
   const max = maxHpOf(m), cur = curHpOf(m), stages = {}, bt = m.battle || {};
   STAGE_KEYS.forEach(k => { const st = stageOf(m, k); if (st) stages[k] = st; });
   return { name: m.nickname || m.species, level: m.level, shiny: !!m.shiny, pct: max ? (cur / max) * 100 : 0, cur, max, stages,
-    fainted: cur <= 0, status: bt.status || null, confused: !!bt.confused, tera: tera || null, dmax: bt.dmax || null, mega: m.mega || '' };
+    fainted: cur <= 0, status: bt.status || null, confused: !!bt.confused, tera: tera || null, dmax: bt.dmax || null, mega: megaFormOf(m) };
 }
 function fieldInfoFromView(v) {
   return { name: v.nickname || v.species, level: v.level, shiny: v.shiny, pct: v.hpPct, stages: v.stages || {}, fainted: v.hpPct <= 0,
-    status: v.status || null, confused: !!v.confused, tera: v.tera || null, dmax: v.dmax || null, mega: v.mega || '' };
+    status: v.status || null, confused: !!v.confused, tera: v.tera || null, dmax: v.dmax || null, mega: v.megaActive || '' };
 }
 // Tera type a Pokémon is using in this battle (null if not terastallized). The opponent's, for a
 // player, comes already resolved in its field view.
@@ -2175,7 +2241,19 @@ function movePanelHtml(pos, m, control, heading, showChart, ctx) {
   const bt = m.battle || {};
   const tera = ctx ? battleTera(ctx.b, ctx.side, m.id) : null;
   const teraType = m.teraType || m.type1 || 'Normal';
-  const [d1, d2] = defTypes(m.type1, m.type2, tera);
+  const [bt1, bt2] = battleTypesOf(m);   // an active official Mega's types
+  const [d1, d2] = defTypes(bt1, bt2, tera);
+  const ability = battleAbilityOf(m);
+  // Mega / Battle Bound: only if the ficha has one chosen; once per side per battle, like the games
+  const sideMega = ctx ? (ctx.b.mega || {})[ctx.side] : null;
+  let megaBtn = '';
+  if (control && ctx && m.mega) {
+    const many = megaOptions(m.species).length > 1;   // Charizard/Mewtwo: say which one (X/Y)
+    const label = m.mega === BATTLE_BOUND ? 'Ativar Battle Bound' : `Mega Evoluir${many ? ` (${esc(m.mega.split(' ').pop())})` : ''}`;
+    megaBtn = !sideMega ? `<button class="mini-btn mega-act" data-act="mega" data-side="${ctx.side}" data-id="${id}" title="${esc(megaLabel(m.mega))}: +10% nos Status (teto 95)">${MEGA_ICON}${label}</button>`
+      : sideMega.mon === m.id ? `<button class="mini-btn" data-act="mega-undo" data-side="${ctx.side}">Desfazer ${m.mega === BATTLE_BOUND ? 'Battle Bound' : 'Mega'}</button>`
+      : '<button class="mini-btn" disabled title="Esse treinador já usou a Mega nesta batalha">Mega já usada</button>';
+  }
   const sideTera = ctx ? (ctx.b.tera || {})[ctx.side] : null;
   const teraBtn = !control || !ctx ? ''
     : !sideTera ? `<button class="mini-btn tera-btn" style="--tc:${TERA_COLORS[teraType] || '#5fb8c8'}" data-act="tera" data-side="${ctx.side}" data-id="${id}">◆ Terastalizar (${esc(teraType)})</button>`
@@ -2200,18 +2278,29 @@ function movePanelHtml(pos, m, control, heading, showChart, ctx) {
       `<button class="st-btn${bt.status === k ? ' on' : ''}" style="--c:${st.color}" data-act="status" data-id="${id}" data-s="${k}" title="${st.label}">${st.short}</button>`).join('')}
     <button class="st-btn${bt.confused ? ' on' : ''}" style="--c:${CONFUSED_COLOR}" data-act="confuse" data-id="${id}" title="Confuso (acumula com os outros)">CONF</button>
     ${bt.status || bt.confused ? `<button class="mini-btn" data-act="status-clear" data-id="${id}">Curar</button>` : ''}</div>`;
-  const stages = STAGE_KEYS.map(k => {
-    const st = stageOf(m, k);
-    return `<div class="bt-stage">
-      <div class="sname">${STAT_LABEL[k]}</div>
-      <div class="sval">${effectiveStat(m, k)}</div>
-      <div class="sstage ${st > 0 ? 'up' : (st < 0 ? 'down' : '')}">${st > 0 ? '+' + st : (st < 0 ? st : '')}</div>
+  // each Status as its normal value plus what the stages add or take ("60 +6"), stage count below.
+  // In the corner, like on the sheet, the crit margin: 10% of the normal Status — stages don't move it
+  // (an active Mega does, since it changes the Status itself). HP takes no stages, but has its box.
+  const stats = finalStatsFor(m);
+  const crit = critMarginFor(stats);
+  const critTag = k => `<span class="scrit" title="Margem de crítico (não muda com os estágios)">${crit[k]}</span>`;
+  const stages = `<div class="bt-stage">
+      <div class="shead"><span class="sname">HP</span>${critTag('hp')}</div>
+      <div class="sval">${stats.hp}<span class="sdelta"></span></div>
+      <div class="sstage"></div>
+    </div>` + STAGE_KEYS.map(k => {
+    const st = stageOf(m, k), eff = effectiveStat(m, k), delta = eff - stats[k];
+    const dir = st > 0 ? 'up' : (st < 0 ? 'down' : '');
+    return `<div class="bt-stage"${st ? ` title="${STAT_LABEL[k]} com os estágios: ${eff}"` : ''}>
+      <div class="shead"><span class="sname">${STAT_LABEL[k]}</span>${critTag(k)}</div>
+      <div class="sval">${stats[k]}<span class="sdelta ${dir}">${st ? (delta >= 0 ? '+' : '-') + Math.abs(delta) : ''}</span></div>
+      <div class="sstage ${dir}">${st ? `<span class="sst-w">estágio </span><span class="sst-a">est. </span>${st > 0 ? '+' + st : st}` : ''}</div>
       ${control ? `<div class="srow"><button data-act="stage-" data-id="${id}" data-k="${k}">−</button><button data-act="stage+" data-id="${id}" data-k="${k}">+</button></div>` : ''}
     </div>`;
   }).join('');
   return `<div class="bt-panel">
     <div class="bp-head">${esc(heading)} · <span>${name}</span></div>
-    ${m.ability ? `<div class="bp-ab" title="${esc(ABILITIES[m.ability] || '')}">Ability: <b>${esc(m.ability)}</b>${ABILITIES[m.ability] ? ` — ${esc(ABILITIES[m.ability])}` : ''}</div>` : ''}
+    ${ability ? `<div class="bp-ab" title="${esc(ABILITIES[ability] || '')}">Ability: <b>${esc(ability)}</b>${ABILITIES[ability] ? ` — ${esc(ABILITIES[ability])}` : ''}</div>` : ''}
     <div class="bp-tera">◆ Tipo Tera: <span class="badge" style="background:${TERA_COLORS[teraType] || '#5fb8c8'};color:#fff;">${esc(teraType)}</span>${tera ? '<b>terastalizado</b>' : ''}</div>
     <div class="bp-moves">${cells}</div>
     <div class="bp-msg">${msg}</div>
@@ -2228,6 +2317,7 @@ function movePanelHtml(pos, m, control, heading, showChart, ctx) {
     ${showChart ? matchupHtml(d1, d2, `Fraquezas de ${m.nickname || m.species}${tera ? ' (Tera ' + tera + ')' : ''}`) : ''}
     <div class="bt-dmg">
       ${control ? `<button class="mini-btn" data-act="reset" data-id="${id}">↺ Restaurar</button>` : ''}
+      ${megaBtn}
       ${teraBtn}
       ${dmaxBtn}
       ${canEditMon(m) ? `<button class="mini-btn" data-act="sheet" data-id="${id}">Abrir ficha</button>` : ''}
@@ -2247,7 +2337,8 @@ function renderBattle() {
 // Each trainer may have a theme. In a running battle the two take turns: when one song ends the
 // other trainer's starts. With one theme it repeats; with none, DEFAULT_BATTLE_THEME plays (if set).
 // Every viewer plays it on their own device; pause/volume are remembered per device.
-const DEFAULT_BATTLE_THEME = null;   // e.g. { kind: 'audio', ref: '/audio/tema-padrao.mp3', title: 'Tema de batalha' }
+// (same shape as a trainer's theme; for YouTube `ref` is the video id)
+const DEFAULT_BATTLE_THEME = { kind: 'youtube', ref: 'qtzPna9yFjg', title: 'Pokémon Diamond, Pearl & Platinum - Trainer Battle Music (HQ)' };
 const music = { key: '', list: [], idx: 0, paused: false, player: null, token: 0, ended: false };
 
 function musicPrefs() { try { return JSON.parse(localStorage.getItem('gustavo_music') || '{}'); } catch (e) { return {}; } }
@@ -2463,6 +2554,10 @@ function logText(b, e) {
     case 'dmax': return `<b class="log-dmax">${whose} ${e.gmax ? 'gigantamaxou' : 'dinamaxou'}! (HP dobrado)</b>`;
     case 'dmax-end': return `${whose} voltou ao tamanho normal.`;
     case 'dmax-undo': return `O Dynamax de ${tn(e.side)} foi desfeito.`;
+    case 'mega': return e.form === BATTLE_BOUND
+      ? `<b class="log-mega">${whose} ativou o Battle Bound!</b>`
+      : `<b class="log-mega">${whose} Mega Evoluiu em ${esc(e.form || 'Mega')}!</b>`;
+    case 'mega-undo': return `A Mega de ${tn(e.side)} foi desfeita.`;
   }
   return '';
 }
@@ -2651,8 +2746,7 @@ async function restoreBattleTeams() {
   if (!b || !confirm('Restaurar HP e estágios dos dois times?')) return;
   const mons = [...b.party.a, ...b.party.b].map(monById).filter(Boolean);
   for (const m of mons) {
-    const dmax = (m.battle || {}).dmax;
-    m.battle = { hp: maxHpOf(m), maxHp: maxHpOf(m), stages: {}, ...(dmax ? { dmax } : {}) };
+    m.battle = restoredBattle(m);
     try { await API.call('PATCH', '/pokemon/' + encodeURIComponent(m.id) + '/battle', { battle: m.battle }); } catch (e) {}
   }
   renderBattle(); renderSidebar();
@@ -2676,14 +2770,16 @@ const ART_BANNER_X = 200;
 
 function battleArtData(b) {
   const t = battleTrainers(b);
-  const pick = m => ({ species: m.species, shiny: !!m.shiny, mega: m.mega || '' });
+  // as each one finished the battle: Mega-evolved ones keep the Mega's sprite
+  const pick = m => ({ species: m.species, shiny: !!m.shiny, megaActive: megaFormOf(m) });
+  const mon = id => battleMon(b, id);
   if (isGM()) {
-    const side = s => ({ trainer: t[s], mons: b.revealed[s].map(monById).filter(Boolean).map(pick) });
+    const side = s => ({ trainer: t[s], mons: b.revealed[s].map(mon).filter(Boolean).map(pick) });
     return { a: side('a'), b: side('b'), winner: b.winner };
   }
   const foe = b.you === 'a' ? 'b' : 'a';
   return {
-    [b.you]: { trainer: t[b.you], mons: b.mine.used.map(monById).filter(Boolean).map(pick) },
+    [b.you]: { trainer: t[b.you], mons: b.mine.used.map(mon).filter(Boolean).map(pick) },
     [foe]: { trainer: t[foe], mons: b.foe.seen.map(pick) },
     winner: b.winner
   };
@@ -3010,6 +3106,11 @@ function onBattleClick(ev) {
   else if (act === 'dmax-end') patchBattleRoom({ dmax: { side: el.dataset.side, end: true } });
   else if (act === 'dmax-undo') { if (confirm('Desfazer o Dynamax deste treinador? O HP volta ao normal.')) patchBattleRoom({ dmax: { side: el.dataset.side, clear: true } }); }
   else if (act === 'tera-undo') { if (confirm('Desfazer o Tera deste treinador?')) patchBattleRoom({ tera: { side: el.dataset.side, clear: true } }); }
+  else if (act === 'mega') battleMega(el.dataset.side, id, true);
+  else if (act === 'mega-undo') {
+    const cur = ((openBattle() || {}).mega || {})[el.dataset.side];
+    if (cur && confirm('Desfazer a Mega deste treinador? Os Status voltam ao normal.')) battleMega(el.dataset.side, cur.mon, false);
+  }
   else if (act === 'sheet') { const mon = monById(id); if (mon) openSheet(mon); }
 }
 function onBattleChange(ev) {
@@ -3291,7 +3392,7 @@ const ERR_PT = {
 const errMsg = e => ERR_PT[e.message] || ('Erro: ' + e.message);
 
 function applyState(st) {
-  allMons = st.pokemon || [];
+  allMons = (st.pokemon || []).map(withoutLegacyMega);
   allTeams = st.teams || [];
   allMembers = st.members || [];
   allNpcs = st.npcs || [];

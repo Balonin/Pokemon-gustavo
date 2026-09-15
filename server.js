@@ -451,12 +451,21 @@ function fieldView(p, tera) {
   const bt = p.battle || {};
   const stages = {};
   Object.entries(bt.stages || {}).forEach(([k, v]) => { if (v) stages[k] = v; });
-  return { species: p.species, nickname: p.nickname || '', level: p.level, shiny: !!p.shiny, mega: p.mega || '',
-    type1: p.type1, type2: p.type2 || '', hpPct: hpPct(p), stages,
+  const [t1, t2] = typesInBattle(p);
+  return { species: p.species, nickname: p.nickname || '', level: p.level, shiny: !!p.shiny, megaActive: megaActiveOf(p),
+    type1: t1, type2: t2, hpPct: hpPct(p), stages,
     status: STATUS_KEYS.includes(bt.status) ? bt.status : null, confused: !!bt.confused, tera: tera || null,
     dmax: bt.dmax === 'gmax' || bt.dmax === 'dmax' ? bt.dmax : null };
 }
 const STATUS_KEYS = ['brn', 'par', 'slp', 'psn', 'tox', 'frz'];
+// A ficha's `mega` is only which Mega it *can* use; it's active while battle.mega = { form, t1, t2, ability }.
+function megaActiveOf(p) { const m = (p.battle || {}).mega; return m && m.form ? m.form : ''; }
+function typesInBattle(p) {
+  const m = (p.battle || {}).mega;
+  if (m && m.form && m.t1) return [m.t1, m.t2 || ''];
+  if (p.megaBase) return [p.megaBase.type1, p.megaBase.type2 || ''];   // fichas saved while Mega used to swap types
+  return [p.type1, p.type2 || ''];
+}
 const TERA_TYPES = ['Normal', 'Fogo', 'Água', 'Grama', 'Elétrico', 'Gelo', 'Lutador', 'Venenoso', 'Solo',
   'Voador', 'Psíquico', 'Inseto', 'Pedra', 'Fantasma', 'Dragão', 'Sombrio', 'Aço', 'Fada', 'Astral'];
 async function trainerInfo(roomId) {
@@ -514,6 +523,7 @@ function logForPlayer(b, you, byId) {
       if (e.k === 'confuse') out.on = e.on;
       if (e.k === 'tera') out.type = e.type;
       if (e.k === 'dmax') out.gmax = !!e.gmax;
+      if (e.k === 'mega') out.form = e.form;
       return out;
     });
 }
@@ -559,14 +569,14 @@ function playerBattleView(b, me, roomMons, info) {
     mine: {
       party: b.party[you].filter(id => byId(id)), active: b.active[you], used: b.revealed[you].filter(id => byId(id)),
       final: final ? Object.fromEntries(b.party[you].filter(id => final[id]).map(id => [id, final[id]])) : null,
-      tera: (b.tera || {})[you] || null
+      tera: (b.tera || {})[you] || null, mega: (b.mega || {})[you] || null
     },
     foe: {
       partySize: foeParty.length,
       active: foeActive ? fieldView(foeActive, teraOf(b, foe, foeActive.id)) : null,
       // every Pokémon of theirs that has been on the field, in order of appearance
       seen: b.revealed[foe].map(byId).filter(Boolean).map(p => ({
-        species: p.species, nickname: p.nickname || '', level: p.level, shiny: !!p.shiny, mega: p.mega || '',
+        species: p.species, nickname: p.nickname || '', level: p.level, shiny: !!p.shiny, megaActive: megaActiveOf(p),
         fainted: hpPct(p) === 0, active: p.id === b.active[foe]
       }))
     },
@@ -939,7 +949,7 @@ app.post('/api/battles', auth, async (req, res) => {
       name: String(body.name || '').trim().slice(0, 60), status: 'active', sides, party,
       active: { a: party.a[0], b: party.b[0] },
       revealed: { a: [party.a[0]], b: [party.b[0]] },   // everything that has been on the field, in order
-      winner: null, tera: { a: null, b: null }, dmax: { a: null, b: null }, createdAt: new Date().toISOString(), log: []
+      winner: null, tera: { a: null, b: null }, dmax: { a: null, b: null }, mega: { a: null, b: null }, createdAt: new Date().toISOString(), log: []
     };
     pushLog(data, { k: 'start' });
     SIDES.forEach(s => pushLog(data, { k: 'send', side: s, mon: party[s][0] }));
@@ -971,6 +981,45 @@ app.patch('/api/battles/:id', auth, async (req, res) => {
         data.active[side] = monId;
         if (!data.revealed[side].includes(monId)) data.revealed[side].push(monId);
         pushLog(data, { k: 'send', side, mon: monId, prev });
+      }
+    }
+    if (body.mega) {
+      const side = body.mega.side;
+      if (!SIDES.includes(side) || data.status !== 'active') return res.status(400).json({ error: 'mega_invalido' });
+      data.mega = data.mega || { a: null, b: null };
+      const hpFields = x => {
+        const out = {};
+        if (x.hp !== undefined && x.hp !== null) out.hp = Math.max(0, parseInt(x.hp, 10) || 0);
+        if (x.maxHp) out.maxHp = Math.max(1, parseInt(x.maxHp, 10) || 1);
+        return out;
+      };
+      if (body.mega.clear) {
+        const cur = data.mega[side];
+        if (!cur) return res.status(400).json({ error: 'mega_invalido' });
+        const p = await store.getPokemon(cur.mon);
+        if (p) { const { mega, ...bt } = p.battle || {}; await setMonBattle(p, roomId, { ...bt, ...hpFields(body.mega) }); }
+        data.mega[side] = null;
+        pushLog(data, { k: 'mega-undo', side });
+      } else {
+        // only the Pokémon on the field, only one Mega (or Battle Bound) per side per battle, and only
+        // the one chosen in its ficha. Types/ability of an official Mega come from the GM's client (the
+        // Mega table lives there); Battle Bound keeps the ficha's own.
+        const monId = String(body.mega.monId || '');
+        if (!data.party[side].includes(monId) || data.active[side] !== monId) return res.status(400).json({ error: 'mega_invalido' });
+        if (data.mega[side]) return res.status(400).json({ error: 'mega_usado' });
+        const p = await store.getPokemon(monId);
+        if (!p || !p.mega) return res.status(400).json({ error: 'mega_invalido' });
+        const form = p.mega === 'bb' ? 'bb' : String(p.mega).slice(0, 60);
+        const mega = { form };
+        if (form !== 'bb') {
+          const type = t => (TERA_TYPES.includes(t) && t !== 'Astral' ? t : '');
+          const t1 = type(body.mega.t1), ability = String(body.mega.ability || '').slice(0, 60);
+          if (t1) Object.assign(mega, { t1, t2: type(body.mega.t2) });
+          if (ability) mega.ability = ability;
+        }
+        await setMonBattle(p, roomId, { ...(p.battle || {}), mega, ...hpFields(body.mega) });
+        data.mega[side] = { mon: monId, form };
+        pushLog(data, { k: 'mega', side, mon: monId, form });
       }
     }
     if (body.dmax) {
