@@ -48,12 +48,18 @@ Os Status são HP, ATK, DEF, SPA, SPD, SPE.
   comeu). Elementos `gm-only` ficam fora do "Copiar imagem" (`ignoreElements` do html2canvas)
 - **Imagem personalizada da ficha**: botão 🖼 na moldura da arte → janela com o mesmo enquadramento do
   avatar (o editor `#avCrop` é um só e muda de lugar: `openCrop(img, state, opts)` com `AVATAR_CROP` /
-  `MON_ART_CROP`), saindo em 320×320. Fica pendente no rascunho (`{ data, pixel }`) e sobe ao salvar a
-  ficha: vira arquivo na tabela `media` (`POST /api/media` aceita webp/png/jpeg até 2 MB, nunca SVG) e a
-  ficha guarda só `customArt = { id, pixel }` (`cleanCustomArt`). Jogador só usa imagem que ele enviou;
-  trocar, tirar ou excluir a ficha apaga o arquivo antigo (`releaseArt`). Aparece **só na ficha e na
-  arte de fim de batalha** (`customArtOf`; vai como `art` no `seen` da visão pública pra arte do jogador/
-  espectador); a arena continua com o sprite oficial. Mega oficial ativa mostra o sprite da Mega
+  `MON_ART_CROP`). Duas imagens: a do Pokémon (`customArt`, aba normal) e a **própria da Mega / Battle
+  Bound** (`megaSheet.art`, aba da Mega — o Battle Bound costuma ter visual diferente). Fica pendente no
+  rascunho (`{ data, pixel }`) e sobe ao salvar a ficha: vira arquivo na tabela `media` (`POST /api/media`
+  aceita webp/png/jpeg até 2 MB, nunca SVG) e a ficha guarda só `{ id, pixel }` (`cleanCustomArt`).
+  Jogador só usa imagem que ele enviou; trocar, tirar, "Sem Mega" ou excluir a ficha apaga o arquivo
+  antigo (`artIdsOf`/`releaseArt`). Aparece **só na ficha e na arte de fim de batalha** (`artRefOf`/
+  `customArtOf`; Mega ativa: a imagem da Mega, senão sprite da Mega oficial / imagem do Pokémon no Battle
+  Bound; na visão pública vai já escolhida como `art` no `seen`, por `artShownFor`); a arena continua com o
+  sprite oficial.
+  **Qualidade**: pixel art é reconhecida pelo número de cores (`looksLikePixelArt`, ≤ 1200) e sai em PNG,
+  com os pixels originais (recorte alinhado a pixels inteiros, sem redimensionar até 640 px) e exibida sem
+  suavização; fotos saem em WebP e suavizadas. Suavização só ao reduzir ou ao ampliar foto (`cropSmoothAt`)
 - **HP em batalha** = Status de HP × 2
 - **Margem de crítico** = 10% do Status (mesmo arredondamento)
 - **Estágios de Status**: cada estágio vale 10% do Status original, limite de ±6.

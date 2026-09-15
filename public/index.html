@@ -1370,15 +1370,25 @@ function spriteIdOf(m) {
   if (opt && opt.id) return opt.id;
   return (DEX_BY_NAME[(m.species || '').toLowerCase()] || {}).id;
 }
-// A ficha's custom picture (`customArt` = { id, pixel }; `{ data, pixel }` while not saved yet; `art` in the
-// opponent's field view). Only the sheet and the end-of-battle art use it — the arena keeps the official
-// sprite. An official Mega with its own sprite shows that sprite instead (Battle Bound keeps the picture).
-function customArtOf(m) {
-  const a = m && (m.customArt || m.art);
-  if (!a || !(a.data || a.id)) return null;
+// A ficha's custom picture: { id, pixel } (`{ data, pixel }` while not saved yet). Only the sheet and the
+// end-of-battle art use it — the arena keeps the official sprite. Mega-evolved (or on the Mega sheet), the
+// Mega / Battle Bound's own picture (`megaSheet.art`) comes first; without one, an official Mega shows its
+// sprite and a Battle Bound the Pokémon's picture. The opponent's field view brings it already picked (`art`).
+function artRefOf(m) {
+  if (!m) return null;
+  const ok = a => (a && (a.data || a.id) ? a : null);
+  if (m.art !== undefined) return ok(m.art);
   const form = megaFormOf(m);
-  if (form && form !== BATTLE_BOUND && (megaOption(m.species, form) || {}).id) return null;
-  return { url: a.data || '/media/' + encodeURIComponent(a.id), pixel: !!a.pixel };
+  if (form) {
+    const own = ok(m.megaSheet && m.megaSheet.art);
+    if (own) return own;
+    if (form !== BATTLE_BOUND && (megaOption(m.species, form) || {}).id) return null;
+  }
+  return ok(m.customArt);
+}
+function customArtOf(m) {
+  const a = artRefOf(m);
+  return a ? { url: a.data || '/media/' + encodeURIComponent(a.id), pixel: !!a.pixel } : null;
 }
 // Fichas saved while picking a Mega still switched on its types/ability (with the originals in
 // `megaBase`): read them back in their base form.
@@ -1575,13 +1585,38 @@ function loadImageFile(file) {
 
 // ----- Framing an uploaded picture -----
 // The square on screen is exactly what becomes the picture: drag to move it, zoom with the slider,
-// the mouse wheel or a pinch. The picture always covers the square (no empty borders). Small pixel art
-// is scaled without smoothing so it stays crisp; photos are smoothed.
+// the mouse wheel or a pinch. The picture always covers the square (no empty borders).
+// Pixel art is told apart by its few colours: enlarged it is never smoothed (stays crisp) and it is
+// saved losslessly (PNG). Smoothing is only used to shrink, or to enlarge a photo.
 // One editor (#avCrop) serves the trainer's avatar and the ficha's picture: `opts` says where it shows
-// (host), what it replaces meanwhile (hide), the size it makes and what to do with the result.
-let crop = null;   // { img, w, h, s (screen px per picture px), x, y (picture's corner on the square), min, max, pointers, opts }
+// (host), what it replaces meanwhile (hide), the size it makes (`size`, or the picture's own pixels up to
+// `max`) and what to do with the result.
+let crop = null;   // { img, w, h, s (screen px per picture px), x, y (picture's corner on the square), min, max, pointers, pixel, opts }
 const cropCanvas = () => document.getElementById('cropCanvas');
-function cropSmooth() { return Math.min(crop.w, crop.h) >= crop.opts.size; }
+const PIXEL_ART_COLORS = 1200;
+// Pixel art has a few hundred colours at most; photos and painted art have thousands. Counted on a copy of
+// at most 256 px (nearest neighbour, so no new colours appear), skipping almost transparent pixels.
+function looksLikePixelArt(img) {
+  if (img._pixel !== undefined) return img._pixel;
+  const k = Math.min(1, 256 / Math.max(img.naturalWidth, img.naturalHeight));
+  const w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.imageSmoothingEnabled = false;
+  g.drawImage(img, 0, 0, w, h);
+  const px = g.getImageData(0, 0, w, h).data, seen = new Set();
+  let pixel = true;
+  for (let i = 0; i < px.length && pixel; i += 4) {
+    if (px[i + 3] < 24) continue;
+    seen.add((px[i] << 16) | (px[i + 1] << 8) | px[i + 2]);
+    if (seen.size > PIXEL_ART_COLORS) pixel = false;
+  }
+  img._pixel = pixel;
+  return pixel;
+}
+// drawing at `scale` (new size ÷ picture size): smooth to shrink, or to enlarge a photo; pixel art enlarges crisp
+function cropSmoothAt(scale) { return scale < 1 || !crop.pixel; }
 const AVATAR_CROP = {
   size: 96, host: 'avCropHost', hide: 'avEditor',
   onApply: (data, state) => { if (!avatarCtx) return; avatarCtx.avatar = data; avatarCtx.crop = state; renderAvatarPreview(); }
@@ -1597,7 +1632,7 @@ function openCrop(img, state, opts) {
   const w = img.naturalWidth, h = img.naturalHeight;
   const min = S / Math.min(w, h);                              // the picture's short side fills the square
   const max = Math.max(min, Math.min(min * 10, S / 8));        // up to 10×, but always at least 8 picture px across
-  crop = { img, w, h, min, max, pointers: new Map(), s: min, x: (S - w * min) / 2, y: (S - h * min) / 2, opts };
+  crop = { img, w, h, min, max, pointers: new Map(), s: min, x: (S - w * min) / 2, y: (S - h * min) / 2, opts, pixel: looksLikePixelArt(img) };
   if (state && state.S) {   // re-framing: same framing as before, in this square's pixels
     const k = S / state.S;
     Object.assign(crop, { s: state.s * k, x: state.x * k, y: state.y * k });
@@ -1636,7 +1671,7 @@ function syncCropZoom() {
 function drawCrop() {
   const cv = cropCanvas(), S = cv.width, g = cv.getContext('2d');
   g.clearRect(0, 0, S, S);
-  g.imageSmoothingEnabled = cropSmooth();
+  g.imageSmoothingEnabled = cropSmoothAt(crop.s);
   g.imageSmoothingQuality = 'high';
   g.drawImage(crop.img, crop.x, crop.y, crop.w * crop.s, crop.h * crop.s);
   // thirds, to help centre a face
@@ -1653,19 +1688,30 @@ function drawCrop() {
   small.imageSmoothingQuality = 'high';
   small.drawImage(big, 0, 0, 32, 32);
 }
-// the part of the picture inside the square, at the avatar's size
+// the square in picture pixels, snapped to whole pixels (so a 1:1 copy takes every pixel as it is)
+function cropRegion() {
+  const S = cropCanvas().width;
+  const side = Math.max(1, Math.min(Math.round(S / crop.s), crop.w, crop.h));
+  const sx = Math.max(0, Math.min(crop.w - side, Math.round(-crop.x / crop.s)));
+  const sy = Math.max(0, Math.min(crop.h - side, Math.round(-crop.y / crop.s)));
+  return { sx, sy, side };
+}
+// the part of the picture inside the square, drawn into `out`
 function renderCropTo(out) {
-  const S = cropCanvas().width, g = out.getContext('2d');
+  const { sx, sy, side } = cropRegion(), g = out.getContext('2d');
   g.clearRect(0, 0, out.width, out.height);
-  g.imageSmoothingEnabled = cropSmooth();
+  g.imageSmoothingEnabled = cropSmoothAt(out.width / side);
   g.imageSmoothingQuality = 'high';
-  g.drawImage(crop.img, -crop.x / crop.s, -crop.y / crop.s, S / crop.s, S / crop.s, 0, 0, out.width, out.height);
+  g.drawImage(crop.img, sx, sy, side, side, 0, 0, out.width, out.height);
 }
 function cropExport() {
+  // a fixed size (the avatar) or the picture's own pixels, untouched, up to opts.max (the ficha's picture)
+  const side = cropRegion().side;
   const c = document.createElement('canvas');
-  c.width = c.height = crop.opts.size;
+  c.width = c.height = crop.opts.size || Math.min(side, crop.opts.max);
   renderCropTo(c);
-  const data = c.toDataURL('image/webp', 0.88);
+  if (crop.pixel) return c.toDataURL('image/png');   // lossless: pixel art keeps every pixel
+  const data = c.toDataURL('image/webp', 0.9);
   return data.startsWith('data:image/webp') ? data : c.toDataURL('image/png');
 }
 // "Usar imagem": the framed picture goes to whoever opened the editor, with the framing remembered
@@ -1673,7 +1719,7 @@ function cropExport() {
 function applyCrop() {
   if (!crop) return;
   const data = cropExport(), opts = crop.opts;
-  const state = { img: crop.img, s: crop.s, x: crop.x, y: crop.y, S: cropCanvas().width, pixel: !cropSmooth() };
+  const state = { img: crop.img, s: crop.s, x: crop.x, y: crop.y, S: cropCanvas().width, pixel: crop.pixel };
   closeCrop();
   opts.onApply(data, state);
 }
@@ -2019,7 +2065,7 @@ function setSheetMega(on) {
 function chooseMega(value) {
   const prev = draft.mega;
   if (!value) {
-    if (draft.megaSheet && !confirm('Tirar a Mega apaga a ficha dela (a ability e os golpes da Mega). Continuar?')) return false;
+    if (draft.megaSheet && !confirm('Tirar a Mega apaga a ficha dela (a ability, os golpes e a imagem da Mega). Continuar?')) return false;
     draft.mega = ''; draft.megaSheet = null; sheetMega = false;
     return true;
   }
@@ -2153,9 +2199,11 @@ function renderSheet() {
   const imgCls = [mega ? 'mega' : '', custom ? 'custom-art' : '', custom && !custom.pixel ? 'smooth' : ''].filter(Boolean).join(' ');
   artFrame.innerHTML = imgSrc ? `<img src="${esc(imgSrc)}" alt=""${imgCls ? ` class="${imgCls}"` : ''}>` : `<span class="ph-letter">${(draft.nickname||draft.species||'?').charAt(0).toUpperCase()}</span>`;
   document.getElementById('shinyBtn').className = 'shiny-btn' + (draft.shiny ? ' active' : '');
+  // whoever can open a ficha can edit it (players only get their own); on the Mega sheet it's the Mega's picture
   const picBtn = document.getElementById('monArtBtn');
-  picBtn.hidden = mega;   // whoever can open a ficha can edit it (players only get their own)
-  picBtn.classList.toggle('active', !!draft.customArt);
+  picBtn.classList.toggle('active', !!(mega ? draft.megaSheet && draft.megaSheet.art : draft.customArt));
+  picBtn.title = mega ? `Imagem ${draft.mega === BATTLE_BOUND ? 'do Battle Bound' : 'da Mega'} (ficha e arte de fim de batalha)`
+    : 'Imagem personalizada (ficha e arte de fim de batalha)';
 
   document.getElementById('typeBadges').innerHTML = [view.type1, view.type2].filter(Boolean).map(t => `<span class="badge" style="background:${TYPE_COLORS[t]||'var(--panel-alt)'};color:#fff;">${t}</span>`).join('') + teraChipHtml();
   document.getElementById('teraChip').addEventListener('click', () => setEditing('tera'));
@@ -2548,18 +2596,31 @@ function onBonusPopClick(ev) {
 
 // ----- A ficha's custom picture -----
 // Same flow as the trainer's avatar: send a picture, frame it (the shared crop editor), done. It stays on
-// the draft ({ data, pixel }) and is uploaded when the ficha is saved.
-const ART_SIZE = 320;
-let monArtCtx = null;   // { art: the picture being chosen (null = official sprite), crop: last framing }
+// the draft ({ data, pixel }) and is uploaded when the ficha is saved. The normal sheet edits the
+// Pokémon's picture (`customArt`); the Mega sheet edits the Mega / Battle Bound's own (`megaSheet.art`).
+// The picture keeps its own pixels (up to 640 px), so pixel art isn't resampled.
+const ART_MAX = 640;
+let monArtCtx = null;   // { target: 'base' | 'mega', art: the picture being chosen (null = default), crop: last framing }
 const MON_ART_CROP = {
-  size: ART_SIZE, host: 'maCropHost', hide: 'maEditor',
+  max: ART_MAX, host: 'maCropHost', hide: 'maEditor',
   onApply: (data, state) => { if (!monArtCtx) return; monArtCtx.art = { data, pixel: state.pixel }; monArtCtx.crop = state; renderMonArtModal(); }
 };
 function openMonArtModal() {
   if (!draft) return;
-  monArtCtx = { art: draft.customArt || null, crop: draft._artCrop || null };
+  const target = sheetMega && draft.mega ? 'mega' : 'base';
+  const art = target === 'mega' ? (draft.megaSheet && draft.megaSheet.art) : draft.customArt;
+  monArtCtx = { target, art: art || null, crop: (draft._artCrop || {})[target] || null };
+  document.getElementById('maTitle').textContent = target === 'base' ? 'Imagem do Pokémon' : `Imagem ${draft.mega === BATTLE_BOUND ? 'do Battle Bound' : 'da Mega'}`;
+  document.getElementById('maOfficialBtn').textContent = target === 'base' ? 'Usar o sprite oficial' : 'Tirar a imagem própria';
   renderMonArtModal();
   document.getElementById('monArtModal').hidden = false;
+}
+// the draft as it would look with the picture being chosen (for the preview)
+function monArtPreviewOf() {
+  const c = monArtCtx;
+  if (c.target === 'base') return { ...draft, battle: null, customArt: c.art };
+  const view = megaViewOf(draft);
+  return { ...view, megaSheet: { ...(view.megaSheet || draft.megaSheet || {}), art: c.art } };
 }
 function closeMonArtModal() {
   if (crop && crop.opts === MON_ART_CROP) closeCrop();
@@ -2568,22 +2629,26 @@ function closeMonArtModal() {
 }
 function renderMonArtModal() {
   if (!monArtCtx || !draft) return;
-  const custom = customArtOf({ ...draft, battle: null, customArt: monArtCtx.art });
-  const dexId = spriteIdOf({ ...draft, battle: null });
+  const look = monArtPreviewOf();
+  const custom = customArtOf(look);
+  const dexId = spriteIdOf(look);
   const src = custom ? custom.url : (dexId ? spriteImg(dexId, draft.shiny) : null);
   document.getElementById('maPreview').innerHTML = src
     ? `<img src="${esc(src)}" alt=""${custom && !custom.pixel ? ' class="smooth"' : ''}>` : '<span class="ph-letter">?</span>';
   document.getElementById('maRecropBtn').hidden = !(monArtCtx.art && monArtCtx.art.data && monArtCtx.crop);
   document.getElementById('maOfficialBtn').hidden = !monArtCtx.art;
+  const fallback = monArtCtx.target === 'base' ? 'Usando o sprite oficial.'
+    : (draft.mega === BATTLE_BOUND ? 'Sem imagem própria: usa a imagem do Pokémon.' : 'Sem imagem própria: usa o sprite oficial da Mega.');
   document.getElementById('maNote').textContent = monArtCtx.art
-    ? (monArtCtx.art.data ? 'Imagem nova — vai junto quando você salvar a ficha.' : 'Imagem personalizada.')
-    : 'Usando o sprite oficial.';
+    ? (monArtCtx.art.data ? 'Imagem nova — vai junto quando você salvar a ficha.' : 'Imagem personalizada.') : fallback;
 }
 function applyMonArt() {
   if (crop && crop.opts === MON_ART_CROP) applyCrop();   // "Pronto" while framing keeps the framing on screen
   if (!monArtCtx || !draft) return;
-  draft.customArt = monArtCtx.art;
-  draft._artCrop = monArtCtx.art && monArtCtx.art.data ? monArtCtx.crop : null;
+  const { target, art } = monArtCtx;
+  if (target === 'mega') draft.megaSheet = { ...(draft.megaSheet || newMegaSheet(draft, draft.mega, true)), art };
+  else draft.customArt = art;
+  draft._artCrop = { ...(draft._artCrop || {}), [target]: art && art.data ? monArtCtx.crop : null };
   closeMonArtModal();
   renderSheet();
 }
@@ -2648,9 +2713,9 @@ async function saveSheet() {
   };
   try {
     // custom picture: a new one is uploaded first and the ficha keeps only its reference
-    let customArt = draft.customArt || null;
-    if (customArt && customArt.data) customArt = { id: await uploadImageData(customArt.data), pixel: !!customArt.pixel };
-    data.customArt = customArt;
+    const savedArt = async a => (a && a.data ? { id: await uploadImageData(a.data), pixel: !!a.pixel } : (a || null));
+    data.customArt = await savedArt(draft.customArt);
+    if (data.megaSheet) data.megaSheet.art = await savedArt(draft.megaSheet && draft.megaSheet.art);   // the Mega / Battle Bound's own
     const owner = (!draftId && isGM()) ? draft._owner : undefined;
     const wasMega = sheetMega;
     const saved = await API.savePokemon({ ...data, id: draftId || undefined, owner });
@@ -3686,7 +3751,7 @@ const ART_BANNER_X = 200;
 function battleArtData(b) {
   const t = battleTrainers(b);
   // as each one finished the battle: Mega-evolved ones keep the Mega's sprite
-  const pick = m => ({ species: m.species, shiny: !!m.shiny, megaActive: megaFormOf(m), art: m.customArt || m.art || null });
+  const pick = m => ({ species: m.species, shiny: !!m.shiny, megaActive: megaFormOf(m), art: artRefOf(m) });
   const mon = id => battleMon(b, id);
   if (isGM()) {
     const side = s => ({ trainer: t[s], mons: b.revealed[s].map(mon).filter(Boolean).map(pick) });
@@ -3799,12 +3864,12 @@ async function drawBattleArt(out, data) {
       ic.clearRect(0, 0, inner.width, inner.height);
       ic.globalCompositeOperation = 'source-over';
       if (imgs[i] && imgs[i].custom) {
-        // a custom picture fills the ball: brought down to 96px once (smoothly, unless it is pixel art) and
-        // drawn 1:1 like the sprites, not mirrored (it may have text or face either way)
+        // a custom picture fills the ball: brought to 96px once (averaged when shrinking; a small pixel-art
+        // picture is enlarged crisp) and drawn 1:1 like the sprites, not mirrored (it may face either way)
         const small = document.createElement('canvas');
         small.width = small.height = 96;
         const sc = small.getContext('2d');
-        sc.imageSmoothingEnabled = !imgs[i].pixel;
+        sc.imageSmoothingEnabled = imgs[i].img.naturalWidth > 96 || !imgs[i].pixel;
         sc.imageSmoothingQuality = 'high';
         sc.drawImage(imgs[i].img, 0, 0, 96, 96);
         ic.drawImage(small, ART_R - 48, ART_R - 48);

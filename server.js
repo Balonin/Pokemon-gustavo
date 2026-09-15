@@ -645,7 +645,7 @@ function publicSideView(b, s, byId) {
     seen: b.revealed[s].map(byId).filter(Boolean).map(p => ({
       species: p.species, nickname: p.nickname || '', level: p.level, shiny: !!p.shiny, megaActive: megaActiveOf(p),
       fainted: hpPct(p) === 0, active: p.id === b.active[s],
-      art: p.customArt || null   // for the end-of-battle art only (the arena keeps the official sprite)
+      art: artShownFor(p)   // for the end-of-battle art only (the arena keeps the official sprite)
     }))
   };
 }
@@ -695,7 +695,8 @@ function cleanMegaSheet(x) {
   if (!x || typeof x !== 'object' || Array.isArray(x)) return null;
   return {
     ability: String(x.ability || '').slice(0, 80),
-    moves: (Array.isArray(x.moves) ? x.moves : []).filter(mv => mv && typeof mv === 'object' && !Array.isArray(mv)).slice(0, 4)
+    moves: (Array.isArray(x.moves) ? x.moves : []).filter(mv => mv && typeof mv === 'object' && !Array.isArray(mv)).slice(0, 4),
+    art: cleanCustomArt(x.art)   // the Mega / Battle Bound's own picture
   };
 }
 
@@ -713,12 +714,26 @@ function cleanBonus(x) {
 }
 
 /* A ficha's custom picture: { id: <media id>, pixel } (pixel art is shown without smoothing) or null.
-   Shown on the sheet and in the end-of-battle art; the battle itself keeps the official sprite. */
+   `customArt` is the Pokémon's, `megaSheet.art` the Mega / Battle Bound's own. Shown on the sheet and in
+   the end-of-battle art; the battle itself keeps the official sprite. */
 function cleanCustomArt(x) {
   if (!x || typeof x !== 'object' || !/^[0-9a-f]{20}$/.test(String(x.id || ''))) return null;
   return { id: x.id, pixel: !!x.pixel };
 }
-async function releaseArt(p) { if (p && p.customArt && p.customArt.id) await store.deleteMedia(p.customArt.id); }
+function artIdsOf(p) {
+  return [p && p.customArt, p && p.megaSheet && p.megaSheet.art].filter(a => a && a.id).map(a => a.id);
+}
+async function releaseArt(p) { for (const id of artIdsOf(p)) await store.deleteMedia(id); }
+// The picture the end-of-battle art shows (mirror of the frontend's artRefOf): Mega-evolved, the Mega's
+// own picture first; an official Mega without one shows its sprite (null); otherwise the Pokémon's.
+function artShownFor(p) {
+  const form = megaActiveOf(p);
+  if (form) {
+    if (p.megaSheet && p.megaSheet.art) return p.megaSheet.art;
+    if (form !== 'bb') return null;
+  }
+  return p.customArt || null;
+}
 
 /* strip fields the client must not control */
 function cleanMonData(body) {
@@ -1022,7 +1037,7 @@ app.delete('/api/npcs/:id', auth, async (req, res) => {
     for (const b of await store.listBattles(m.roomId)) {
       if (SIDES.some(s => b.sides[s].owner === owner)) await store.deleteBattle(b.id);
     }
-    const arts = (await store.listPokemon(m.roomId)).filter(p => p.owner === owner && p.customArt);
+    const arts = (await store.listPokemon(m.roomId)).filter(p => p.owner === owner && artIdsOf(p).length);
     await store.deleteNpc(npc.id, owner);
     for (const p of arts) await releaseArt(p);
     await releaseTheme(npc.theme, null);
@@ -1062,19 +1077,18 @@ app.post('/api/pokemon', auth, async (req, res) => {
       if (existing && existing.bonus) data.bonus = existing.bonus; else delete data.bonus;
     }
     if (data.order === undefined && existing && existing.order !== undefined) data.order = existing.order;
-    // custom picture: a media file of this room (for a player, one they uploaded themself); an unchanged
-    // one is kept as is, and replacing or removing it deletes the old file
-    const oldArt = existing && existing.customArt ? existing.customArt.id : null;
-    if (data.customArt === undefined) {
-      if (oldArt) data.customArt = existing.customArt;
-    } else if (data.customArt && data.customArt.id !== oldArt) {
-      const f = await store.getMediaInfo(data.customArt.id);
+    // custom pictures (the Pokémon's and the Mega's): media files of this room — for a player, ones they
+    // uploaded themself. Unchanged ones are kept as they are; a replaced or removed one is deleted.
+    if (data.customArt === undefined && existing && existing.customArt) data.customArt = existing.customArt;
+    const artBefore = artIdsOf(existing), artAfter = artIdsOf(data);
+    for (const artId of artAfter.filter(x => !artBefore.includes(x))) {
+      const f = await store.getMediaInfo(artId);
       if (!f || f.roomId !== m.roomId || !IMAGE_MIMES.includes(f.mime) || (!isGM(m) && f.owner !== m.name)) {
         return res.status(400).json({ error: 'imagem_invalida' });
       }
     }
     await store.upsertPokemon(id, m.roomId, owner, data);
-    if (oldArt && (!data.customArt || data.customArt.id !== oldArt)) await store.deleteMedia(oldArt);
+    for (const artId of artBefore.filter(x => !artAfter.includes(x))) await store.deleteMedia(artId);
     res.json({ id, owner });
   } catch (e) {
     console.error(e); res.status(500).json({ error: 'erro_interno' });
