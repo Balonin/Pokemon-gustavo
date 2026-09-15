@@ -1711,7 +1711,7 @@ function cropExport() {
   c.width = c.height = crop.opts.size || Math.min(side, crop.opts.max);
   renderCropTo(c);
   if (crop.pixel) return c.toDataURL('image/png');   // lossless: pixel art keeps every pixel
-  const data = c.toDataURL('image/webp', 0.9);
+  const data = c.toDataURL('image/webp', 0.92);
   return data.startsWith('data:image/webp') ? data : c.toDataURL('image/png');
 }
 // "Usar imagem": the framed picture goes to whoever opened the editor, with the framing remembered
@@ -2598,8 +2598,9 @@ function onBonusPopClick(ev) {
 // Same flow as the trainer's avatar: send a picture, frame it (the shared crop editor), done. It stays on
 // the draft ({ data, pixel }) and is uploaded when the ficha is saved. The normal sheet edits the
 // Pokémon's picture (`customArt`); the Mega sheet edits the Mega / Battle Bound's own (`megaSheet.art`).
-// The picture keeps its own pixels (up to 640 px), so pixel art isn't resampled.
-const ART_MAX = 640;
+// The picture keeps its own pixels (up to 1024 px), so pixel art isn't resampled and an illustration stays
+// sharp on high-density screens and in "Copiar imagem" (captured at 2×).
+const ART_MAX = 1024;
 let monArtCtx = null;   // { target: 'base' | 'mega', art: the picture being chosen (null = default), crop: last framing }
 const MON_ART_CROP = {
   max: ART_MAX, host: 'maCropHost', hide: 'maEditor',
@@ -3850,6 +3851,7 @@ async function drawBattleArt(out, data) {
     const w = Math.floor(Math.sqrt(Math.max(0, (ART_R - 3) ** 2 - y * y)));
     if (w > 0) mc.fillRect(ART_R - w, ART_R + y, w * 2 + 1, 1);
   }
+  const overlays = [];   // illustrations, drawn at full resolution once the art is enlarged
   for (const [s, , mirror] of sides) {
     const mons = data[s].mons.slice(0, ART_SLOTS.length);
     const imgs = await Promise.all(mons.map(m => {
@@ -3863,9 +3865,12 @@ async function drawBattleArt(out, data) {
       const cx = mirror ? ART_W - sx : sx;
       ic.clearRect(0, 0, inner.width, inner.height);
       ic.globalCompositeOperation = 'source-over';
-      if (imgs[i] && imgs[i].custom) {
-        // a custom picture fills the ball: brought to 96px once (averaged when shrinking; a small pixel-art
-        // picture is enlarged crisp) and drawn 1:1 like the sprites, not mirrored (it may face either way)
+      if (imgs[i] && imgs[i].custom && !imgs[i].pixel) {
+        // an illustration (not pixel art) goes on top after the 2× enlargement, at the final resolution
+        overlays.push({ x: cx, y: sy, img: imgs[i].img });
+      } else if (imgs[i] && imgs[i].custom) {
+        // pixel art fills the ball: brought to 96px once (averaged when shrinking; a small one is enlarged
+        // crisp) and drawn 1:1 like the sprites, not mirrored (it may face either way)
         const small = document.createElement('canvas');
         small.width = small.height = 96;
         const sc = small.getContext('2d');
@@ -3994,6 +3999,20 @@ async function drawBattleArt(out, data) {
   const octx = out.getContext('2d');
   octx.imageSmoothingEnabled = false;
   octx.drawImage(cv, 0, 0, out.width, out.height);
+  // Illustrations (custom pictures that aren't pixel art) would turn into big blocks at 96 art pixels:
+  // they go on top here, smooth and at the final resolution, inside the ball's rim (same square as a sprite)
+  const k = ART_SCALE;
+  overlays.forEach(({ x, y, img }) => {
+    const ox = (x + 0.5) * k, oy = (y + 0.5) * k;
+    octx.save();
+    octx.beginPath();
+    octx.arc(ox, oy, (ART_R - 2.5) * k, 0, Math.PI * 2);
+    octx.clip();
+    octx.imageSmoothingEnabled = true;
+    octx.imageSmoothingQuality = 'high';
+    octx.drawImage(img, ox - 48 * k, oy - 48 * k, 96 * k, 96 * k);
+    octx.restore();
+  });
 }
 
 let artFileName = 'batalha.png';

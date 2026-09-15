@@ -58,8 +58,10 @@ Os Status são HP, ATK, DEF, SPA, SPD, SPE.
   Bound; na visão pública vai já escolhida como `art` no `seen`, por `artShownFor`); a arena continua com o
   sprite oficial.
   **Qualidade**: pixel art é reconhecida pelo número de cores (`looksLikePixelArt`, ≤ 1200) e sai em PNG,
-  com os pixels originais (recorte alinhado a pixels inteiros, sem redimensionar até 640 px) e exibida sem
-  suavização; fotos saem em WebP e suavizadas. Suavização só ao reduzir ou ao ampliar foto (`cropSmoothAt`)
+  com os pixels originais (recorte alinhado a pixels inteiros, sem redimensionar até 1024 px) e exibida sem
+  suavização; ilustrações/fotos saem em WebP (até 1024 px) e suavizadas. Suavização só ao reduzir ou ao
+  ampliar foto (`cropSmoothAt`). Na arte de fim de batalha, pixel art entra no desenho de 640×360 como os
+  sprites; ilustração é pintada **depois** da ampliação 2×, na resolução final (`overlays` em `drawBattleArt`)
 - **HP em batalha** = Status de HP × 2
 - **Margem de crítico** = 10% do Status (mesmo arredondamento)
 - **Estágios de Status**: cada estágio vale 10% do Status original, limite de ±6.
