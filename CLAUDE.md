@@ -66,7 +66,9 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   ele que está no `owner` das fichas e não muda (vai virar o login com senha). O **personagem**
   (`members.char_name`, `character` no JSON) é por sala, pode mudar a qualquer hora
   (`PUT /api/me/character`) e é o que aparece pros outros (`roomTrainers`, `trainerInfo`); vazio =
-  mostra o nome de login. Ao entrar numa sala sem personagem, a janela de caracterização abre sozinha
+  mostra o nome de login. Ao entrar numa sala sem personagem, a janela de caracterização abre sozinha.
+  O Mestre vê os dois: na ficha ("Ash · jogador: Diogo"), na barra lateral, na dica da coluna de
+  treinadores e na escolha de dono de ficha nova (`loginOf`, que é o `owner` da ficha)
 - Cada pessoa recebe um **token** salvo no `localStorage` e enviado no header
   `Authorization: Bearer <token>`
 - **As permissões são aplicadas no servidor**, não no cliente:

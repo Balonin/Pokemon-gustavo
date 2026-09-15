@@ -774,6 +774,9 @@ body.in-room { max-width: none; padding: 12px; }
 .me-avatar-btn:hover .av { border-color: var(--gold); }
 .sheet-owner { margin-right: auto; display: flex; align-items: center; gap: 8px; min-width: 0; font-family: var(--font-pixel); font-size: 0.59rem; color: var(--ink-soft); }
 .sheet-owner .av { --av: 24px; }
+.owner-names { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.owner-names b { font-weight: normal; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.owner-names small { font-family: var(--font-input); font-size: 0.8rem; color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheet-owner select { width: auto; max-width: 220px; padding: 5px 7px; font-size: 0.8rem; }
 
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(8, 10, 16, 0.75); }
@@ -1403,6 +1406,8 @@ function roomTrainers() {
 function trainerOf(owner) {
   return roomTrainers().find(t => t.key === owner) || { key: owner, name: owner || '—', kind: 'player', avatar: '' };
 }
+// GM: who plays a character — the login name (the ficha's owner key), when it differs from the character's
+function loginOf(t) { return t && t.kind !== 'npc' && t.key && t.name !== t.key ? t.key : ''; }
 
 const AV_COLORS = ['#c14f4f', '#e8813a', '#bda45c', '#6bbf5c', '#4878c8', '#7566bf', '#a35bc7', '#e8608f', '#3a9a8a', '#75655c'];
 // avatar: '' → colored initial, 'mon:<dex id>' → Pokémon sprite, 'data:image/…' → uploaded picture
@@ -1735,14 +1740,15 @@ function renderSheetOwner() {
   if (!isGM() || !draft) { el.innerHTML = ''; return; }
   if (draftId) {
     const t = trainerOf(draft.owner);
-    el.innerHTML = `${avatarHtml(t.avatar, t.name)}<span>${esc(t.name)}${t.kind === 'npc' ? ' · NPC' : ''}</span>`;
+    const login = loginOf(t);
+    el.innerHTML = `${avatarHtml(t.avatar, t.name)}<span class="owner-names"><b>${esc(t.name)}${t.kind === 'npc' ? ' · NPC' : ''}</b>${login ? `<small>${t.kind === 'gm' ? 'mestre' : 'jogador'}: ${esc(login)}</small>` : ''}</span>`;
     return;
   }
   const trainers = roomTrainers();
   const cur = trainers.find(t => t.key === draft._owner) || trainers[0];
   el.innerHTML = `${avatarHtml(cur.avatar, cur.name)}<span>Treinador:</span>
     <select id="sheetOwnerSel">${trainers.map(t =>
-      `<option value="${esc(t.key)}"${t.key === cur.key ? ' selected' : ''}>${esc(t.name)}${t.kind === 'npc' ? ' (NPC)' : ''}</option>`).join('')}</select>`;
+      `<option value="${esc(t.key)}"${t.key === cur.key ? ' selected' : ''}>${esc(t.name)}${t.kind === 'npc' ? ' (NPC)' : (loginOf(t) ? ` (${esc(loginOf(t))})` : '')}</option>`).join('')}</select>`;
   document.getElementById('sheetOwnerSel').addEventListener('change', (e) => { draft._owner = e.target.value; renderSheetOwner(); });
 }
 
@@ -3659,7 +3665,7 @@ let selectedTrainerKey = null;
 
 function railTile(t, count) {
   const active = t.key === selectedTrainerKey ? ' active' : '';
-  return `<button class="tr-tile${active}" data-trainer="${esc(t.key)}" title="${esc(t.name)}${t.kind === 'npc' ? ' (NPC)' : ''}">
+  return `<button class="tr-tile${active}" data-trainer="${esc(t.key)}" title="${esc(t.name)}${t.kind === 'npc' ? ' (NPC)' : (loginOf(t) ? ` — ${t.kind === 'gm' ? 'mestre' : 'jogador'}: ${esc(loginOf(t))}` : '')}">
     ${avatarHtml(t.avatar, t.name)}
     <span class="tr-name">${esc(t.name)}</span>
     ${count ? `<span class="tr-count">${count}</span>` : ''}
@@ -3717,8 +3723,9 @@ function renderSidebar() {
     if (isGM()) {
       if (!trainer) { sb.innerHTML = ''; return; }
       const own = mons.filter(m => m.owner === trainer.key);
+      const login = loginOf(trainer);
       const role = trainer.kind === 'npc' ? '<span class="npc-tag">NPC</span>'
-        : (trainer.key === currentTrainer ? 'você' : (trainer.kind === 'gm' ? 'Mestre' : 'Jogador'));
+        : (trainer.key === currentTrainer ? 'você' : (trainer.kind === 'gm' ? 'Mestre' : 'Jogador')) + (login ? `: ${esc(login)}` : '');
       html += `<div class="sb-trainer">
         ${avatarHtml(trainer.avatar, trainer.name)}
         <div class="sb-tname">${esc(trainer.name)}<small>${role} · ${own.length} ficha${own.length === 1 ? '' : 's'}</small></div>
