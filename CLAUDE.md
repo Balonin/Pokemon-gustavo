@@ -62,6 +62,14 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   os tokens morrem, e quem estava dentro volta pro lobby na próxima atualização (`token_invalido`), com
   só aquela sala saindo da lista de recentes (`forgetSession`). O nome novo chega a todos por
   `/api/state` (`applyState`)
+- **Expulsar jogador**: o Mestre, no botão "Expulsar da campanha" da barra lateral do jogador, chama
+  `DELETE /api/members/:nome { deleteData, block }`. Apaga todos os tokens desse nome (todos os
+  aparelhos). `deleteData` apaga fichas, times, músicas e as batalhas em que ele luta (como no NPC);
+  sem isso as fichas ficam com o Mestre, no treinador marcado "fora da campanha" (`gone` em
+  `roomTrainers`), e voltam pro jogador se ele entrar de novo com o mesmo nome. `block` põe o nome em
+  `rooms.banned` (JSON; comparação sem diferenciar maiúsculas), e a entrada recusa com
+  `nome_bloqueado`. Só o Mestre recebe `room.banned`; desbloqueia no ⚙ (`DELETE /api/room/banned/:nome`).
+  É bloqueio por nome — sem senha, quem tem o código entra com outro nome
 - **Nome de login × personagem**: o nome digitado no lobby (`members.name`) é a identidade — é
   ele que está no `owner` das fichas e não muda (vai virar o login com senha). O **personagem**
   (`members.char_name`, `character` no JSON) é por sala, pode mudar a qualquer hora

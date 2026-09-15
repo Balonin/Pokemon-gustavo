@@ -768,6 +768,14 @@ body.in-room { max-width: none; padding: 12px; }
 .rm-danger p { margin: 0; font-size: 0.78rem; line-height: 1.5; color: var(--ink-soft); }
 .rm-danger b { color: #fff; font-weight: normal; }
 .rm-danger .btn { align-self: flex-start; }
+.rm-banned { margin-top: 16px; }
+.rm-banned-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px dashed var(--panel-hi); }
+.rm-banned-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-input); font-size: 0.9rem; }
+label.chk { display: flex; align-items: flex-start; gap: 9px; margin: 10px 0 0; cursor: pointer; font-family: var(--font-body); font-size: 0.78rem; line-height: 1.5; color: var(--ink); }
+label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; padding: 0; accent-color: var(--gold); cursor: pointer; }
+.kk-who { margin: 8px 0 4px; font-family: var(--font-pixel); font-size: 0.66rem; color: #fff; }
+.kk-who small { display: block; margin-top: 5px; font-family: var(--font-input); font-size: 0.85rem; color: var(--ink-soft); }
+.kk-text { margin: 8px 0 0; font-size: 0.76rem; line-height: 1.5; color: var(--ink-soft); }
 .rm-danger .btn:disabled { --edge: #5a4048; color: #8a7a80; cursor: not-allowed; transform: none; }
 .me-avatar-btn { background: none; border: none; padding: 0; cursor: pointer; display: inline-flex; }
 .me-avatar-btn .av { --av: 30px; }
@@ -995,6 +1003,7 @@ body.in-room { max-width: none; padding: 12px; }
       <input id="rmName" maxlength="80" autocomplete="off">
       <button class="btn small" id="rmSaveBtn">Salvar</button>
     </div>
+    <div class="rm-banned" id="rmBanned" hidden></div>
     <div class="rm-danger">
       <div class="rm-danger-t">Excluir campanha</div>
       <p>Apaga <b>pra sempre</b> todas as fichas, times, NPCs, batalhas e músicas enviadas desta campanha, e todo mundo perde o acesso. Não dá pra desfazer.</p>
@@ -1004,6 +1013,24 @@ body.in-room { max-width: none; padding: 12px; }
     </div>
     <div class="top-actions" style="margin:14px 0 0;">
       <button class="btn secondary small" id="rmCloseBtn">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== REMOVE A PLAYER (GM) ===== -->
+<div class="modal-backdrop" id="kickModal" hidden>
+  <div class="card modal" role="dialog" aria-modal="true" aria-labelledby="kkTitle">
+    <h2 id="kkTitle">Expulsar jogador</h2>
+    <div class="kk-who" id="kkWho"></div>
+    <p class="kk-text">Ele perde o acesso na hora, em todos os aparelhos, e volta pra tela inicial.</p>
+    <label class="chk"><input type="checkbox" id="kkBlock" checked>
+      <span>Bloquear esse nome — não consegue entrar de novo com ele (dá pra desbloquear no ⚙ da campanha)</span></label>
+    <label class="chk"><input type="checkbox" id="kkDelete">
+      <span id="kkDeleteText">Apagar também o que é dele</span></label>
+    <p class="kk-text" id="kkKeepNote"></p>
+    <div class="top-actions" style="margin:14px 0 0;">
+      <button class="btn secondary small" id="kkCancel">Cancelar</button>
+      <button class="btn danger small" id="kkGo">Expulsar</button>
     </div>
   </div>
 </div>
@@ -1398,7 +1425,8 @@ function roomTrainers() {
   allMons.forEach(m => {
     if (!m.owner || seen.has(m.owner)) return;
     seen.add(m.owner);
-    list.push({ key: m.owner, name: m.owner.startsWith(NPC_PREFIX) ? 'NPC removido' : m.owner, kind: 'player', avatar: '' });
+    // fichas whose trainer is no longer in the campaign (removed player, deleted NPC)
+    list.push({ key: m.owner, name: m.owner.startsWith(NPC_PREFIX) ? 'NPC removido' : m.owner, kind: 'player', avatar: '', gone: true });
   });
   allNpcs.forEach(n => list.push({ key: NPC_PREFIX + n.id, name: n.name, kind: 'npc', avatar: n.avatar, theme: n.theme || null, npcId: n.id }));
   return list;
@@ -3725,6 +3753,7 @@ function renderSidebar() {
       const own = mons.filter(m => m.owner === trainer.key);
       const login = loginOf(trainer);
       const role = trainer.kind === 'npc' ? '<span class="npc-tag">NPC</span>'
+        : trainer.gone ? 'fora da campanha'
         : (trainer.key === currentTrainer ? 'você' : (trainer.kind === 'gm' ? 'Mestre' : 'Jogador')) + (login ? `: ${esc(login)}` : '');
       html += `<div class="sb-trainer">
         ${avatarHtml(trainer.avatar, trainer.name)}
@@ -3735,6 +3764,7 @@ function renderSidebar() {
       own.forEach(m => { html += sidebarItem(m, {}) + sidebarMegaItem(m); });
       html += `<button class="btn small sb-add" id="sbNewBtn">+ Nova Ficha</button>`;
       if (trainer.kind === 'npc') html += `<button class="btn secondary small sb-add" id="sbEditNpc">Editar NPC</button>`;
+      if (trainer.kind === 'player' && !trainer.gone) html += `<button class="btn danger small sb-add" id="sbKick">Expulsar da campanha</button>`;
     } else {
       html += `<div class="sb-group-title">Meus Pokémon</div>`;
       if (!mons.length) html += '<div style="font-size:0.8rem;color:var(--ink-soft);margin-bottom:8px;">Nenhuma ficha ainda.</div>';
@@ -3744,6 +3774,8 @@ function renderSidebar() {
     sb.innerHTML = html;
     const closeBtn = document.getElementById('sbCloseTrainer');
     if (closeBtn) closeBtn.addEventListener('click', () => { selectedTrainerKey = null; renderSidebar(); });
+    const kickBtn = document.getElementById('sbKick');
+    if (kickBtn) kickBtn.addEventListener('click', () => openKickModal(trainer));
     const editBtn = document.getElementById('sbEditNpc');
     if (editBtn) editBtn.addEventListener('click', () => {
       const npc = allNpcs.find(n => n.id === trainer.npcId);
@@ -3898,7 +3930,10 @@ const ERR_PT = {
   sala_nao_encontrada: 'Sala não encontrada. Confira o código.',
   nome_obrigatorio: 'Preenche seu nome primeiro.',
   nao_e_seu: 'Essa ficha é de outro jogador.',
-  token_invalido: 'Essa sala não está mais disponível: a sessão expirou ou a campanha foi excluída pelo Mestre.',
+  token_invalido: 'Você não tem mais acesso a essa sala: a sessão expirou, o Mestre te removeu da campanha ou ela foi excluída.',
+  nome_bloqueado: 'O Mestre bloqueou esse nome nesta campanha.',
+  jogador_nao_encontrado: 'Esse jogador já não está na campanha.',
+  nao_remove_mestre: 'O Mestre não pode ser expulso.',
   nome_campanha_obrigatorio: 'Dá um nome pra campanha.',
   confirmacao_invalida: 'O nome digitado não confere com o da campanha.',
   sem_token: 'Sua sessão expirou. Entre na sala de novo.',
@@ -3927,6 +3962,7 @@ function applyState(st) {
     document.getElementById('wsRoomName').textContent = st.room.name || 'Sala';
     if (session) { session.roomName = st.room.name; saveSessionLocal(session); }
   }
+  roomBanned = (st.room && st.room.banned) || [];
   allMons = (st.pokemon || []).map(withoutLegacyMega);
   allTeams = st.teams || [];
   allMembers = st.members || [];
@@ -3988,10 +4024,61 @@ function openRoomModal() {
   document.getElementById('rmConfirmName').textContent = currentRoom.name || '';
   document.getElementById('rmConfirm').value = '';
   document.getElementById('rmDeleteBtn').disabled = true;
+  renderBannedList();
   document.getElementById('roomModal').hidden = false;
   document.getElementById('rmName').focus();
 }
 function closeRoomModal() { document.getElementById('roomModal').hidden = true; }
+// GM: names blocked from joining (after an "Expulsar" with the block on), each with "Desbloquear"
+let roomBanned = [];
+function renderBannedList() {
+  const box = document.getElementById('rmBanned');
+  box.hidden = !roomBanned.length;
+  box.innerHTML = roomBanned.length ? `<label>Nomes bloqueados</label>${roomBanned.map(n =>
+    `<div class="rm-banned-row"><span>${esc(n)}</span><button class="mini-btn" data-unban="${esc(n)}">Desbloquear</button></div>`).join('')}` : '';
+}
+async function unbanName(name) {
+  try { await API.call('DELETE', '/room/banned/' + encodeURIComponent(name)); } catch (e) { alert(errMsg(e)); return; }
+  roomBanned = roomBanned.filter(n => n !== name);
+  renderBannedList();
+}
+
+// ----- Remove a player (GM) -----
+let kickTarget = null;
+function openKickModal(t) {
+  kickTarget = t;
+  const login = loginOf(t);
+  const mons = allMons.filter(m => m.owner === t.key).length;
+  const teams = allTeams.filter(x => x.owner === t.key).length;
+  const battles = allBattles.filter(b => ['a', 'b'].some(s => b.sides[s].owner === t.key)).length;
+  const what = [`${mons} ficha${mons === 1 ? '' : 's'}`, teams ? `${teams} time${teams === 1 ? '' : 's'}` : '', battles ? `${battles} batalha${battles === 1 ? '' : 's'}` : ''].filter(Boolean);
+  document.getElementById('kkWho').innerHTML = `${esc(t.name)}${login ? `<small>jogador: ${esc(login)}</small>` : ''}`;
+  document.getElementById('kkDeleteText').textContent = `Apagar também o que é dele: ${what.join(', ')} e as músicas que ele enviou. Não dá pra desfazer.`;
+  document.getElementById('kkBlock').checked = true;
+  document.getElementById('kkDelete').checked = false;
+  updateKickNote();
+  document.getElementById('kickModal').hidden = false;
+}
+function closeKickModal() { document.getElementById('kickModal').hidden = true; kickTarget = null; }
+function updateKickNote() {
+  const del = document.getElementById('kkDelete').checked;
+  document.getElementById('kkKeepNote').textContent = del ? ''
+    : 'As fichas continuam com você, na coluna de treinadores, marcadas como "fora da campanha". Se ele voltar com o mesmo nome (sem bloqueio), elas voltam pra ele.';
+  document.getElementById('kkGo').textContent = del ? 'Expulsar e apagar' : 'Expulsar';
+}
+async function kickPlayer() {
+  const t = kickTarget;
+  if (!t) return;
+  const deleteData = document.getElementById('kkDelete').checked, block = document.getElementById('kkBlock').checked;
+  if (deleteData && !confirm(`Apagar pra sempre as fichas, times e batalhas de ${t.name}?`)) return;
+  try {
+    await API.call('DELETE', '/members/' + encodeURIComponent(t.key), { deleteData, block });
+  } catch (e) { alert(errMsg(e)); return; }
+  closeKickModal();
+  if (deleteData) selectedTrainerKey = null;
+  if (draft && (draft.owner === t.key || draft._owner === t.key) && deleteData) closeSheet();
+  await refreshState();
+}
 async function renameRoom() {
   const input = document.getElementById('rmName');
   const name = input.value.trim();
@@ -4032,6 +4119,7 @@ function showLobby() {
   document.getElementById('battleMusic').hidden = true;
   closeAvatarModal();
   closeRoomModal();
+  closeKickModal();
   clearTimeout(pollTimer); pollTimer = null; lastStateRaw = '';
   renderRecentRooms();
 }
@@ -4251,6 +4339,12 @@ async function init() {
     document.getElementById('rmDeleteBtn').disabled = e.target.value.trim() !== ((currentRoom && currentRoom.name) || '').trim();
   });
   document.getElementById('rmDeleteBtn').addEventListener('click', deleteRoom);
+  document.getElementById('rmBanned').addEventListener('click', (e) => { const b = e.target.closest('[data-unban]'); if (b) unbanName(b.dataset.unban); });
+  document.getElementById('kkCancel').addEventListener('click', closeKickModal);
+  document.getElementById('kkGo').addEventListener('click', kickPlayer);
+  document.getElementById('kkDelete').addEventListener('change', updateKickNote);
+  document.getElementById('kickModal').addEventListener('click', (e) => { if (e.target.id === 'kickModal') closeKickModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.getElementById('kickModal').hidden) closeKickModal(); });
   document.getElementById('roomModal').addEventListener('click', (e) => { if (e.target.id === 'roomModal') closeRoomModal(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.getElementById('roomModal').hidden) closeRoomModal(); });
   document.getElementById('fieldModal').addEventListener('click', onFieldModalClick);

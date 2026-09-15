@@ -70,6 +70,7 @@ if (DATABASE_URL) {
       ALTER TABLE members ADD COLUMN IF NOT EXISTS theme TEXT NOT NULL DEFAULT '';
       ALTER TABLE members ADD COLUMN IF NOT EXISTS char_name TEXT NOT NULL DEFAULT '';
       ALTER TABLE npcs ADD COLUMN IF NOT EXISTS theme TEXT NOT NULL DEFAULT '';
+      ALTER TABLE rooms ADD COLUMN IF NOT EXISTS banned TEXT NOT NULL DEFAULT '[]';
       CREATE TABLE IF NOT EXISTS media (
         id TEXT PRIMARY KEY,
         room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
@@ -97,9 +98,13 @@ if (DATABASE_URL) {
       const r = await pool.query('SELECT * FROM rooms WHERE id = $1', [id]);
       if (!r.rows[0]) return null;
       const x = r.rows[0];
-      return { id: x.id, name: x.name, gmName: x.gm_name, gmToken: x.gm_token };
+      return { id: x.id, name: x.name, gmName: x.gm_name, gmToken: x.gm_token, banned: parseNameList(x.banned) };
     },
     async renameRoom(id, name) { await pool.query('UPDATE rooms SET name = $2 WHERE id = $1', [id, name]); },
+    async setRoomBanned(id, list) { await pool.query('UPDATE rooms SET banned = $2 WHERE id = $1', [id, JSON.stringify(list)]); },
+    // every token (device) of that name in the room
+    async removeMember(roomId, name) { await pool.query('DELETE FROM members WHERE room_id = $1 AND name = $2', [roomId, name]); },
+    async deleteMediaOf(roomId, owner) { await pool.query('DELETE FROM media WHERE room_id = $1 AND owner = $2', [roomId, owner]); },
     // everything in the campaign goes with it; explicit deletes (in one transaction) instead of trusting
     // ON DELETE CASCADE, in case an old database has a table without it
     async deleteRoom(id) {
@@ -243,6 +248,13 @@ if (DATABASE_URL) {
     async createRoom(room) { mem.rooms[room.id] = room; },
     async getRoom(id) { return mem.rooms[id] || null; },
     async renameRoom(id, name) { if (mem.rooms[id]) mem.rooms[id].name = name; },
+    async setRoomBanned(id, list) { if (mem.rooms[id]) mem.rooms[id].banned = [...list]; },
+    async removeMember(roomId, name) {
+      Object.entries(mem.members).forEach(([t, x]) => { if (x.roomId === roomId && x.name === name) delete mem.members[t]; });
+    },
+    async deleteMediaOf(roomId, owner) {
+      Object.entries(mem.media).forEach(([id, f]) => { if (f.roomId === roomId && f.owner === owner) delete mem.media[id]; });
+    },
     async deleteRoom(id) {
       ['battles', 'pokemon', 'teams', 'npcs', 'media', 'members'].forEach(t => {
         Object.entries(mem[t]).forEach(([k, x]) => { if (x.roomId === id) delete mem[t][k]; });
@@ -315,6 +327,11 @@ if (DATABASE_URL) {
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
+function parseNameList(s) {
+  try { const v = JSON.parse(s || '[]'); return Array.isArray(v) ? v.map(String) : []; } catch (e) { return []; }
+}
+// a blocked name is refused ignoring case ("Diogo" also blocks "diogo")
+const isBlocked = (room, name) => (room.banned || []).some(b => b.toLowerCase() === name.toLowerCase());
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function roomCode(n = 6) {
   let out = '';
@@ -727,6 +744,7 @@ app.post('/api/rooms/:id/join', async (req, res) => {
     if (!name) return res.status(400).json({ error: 'nome_obrigatorio' });
     const room = await store.getRoom(roomId);
     if (!room) return res.status(404).json({ error: 'sala_nao_encontrada' });
+    if (isBlocked(room, name)) return res.status(403).json({ error: 'nome_bloqueado' });
     // rejoining under the same name (new device) keeps the avatar and theme already chosen
     const same = uniqueMembers(await store.listMembers(roomId)).find(x => x.name === name);
     const avatar = same ? same.avatar : '';
@@ -766,6 +784,52 @@ app.delete('/api/room', auth, async (req, res) => {
   }
 });
 
+/* The GM removes a player from the campaign: every token (device) under that name stops working.
+   Optionally deletes what is theirs — fichas, teams, uploaded music and the battles they fight in —
+   and blocks the name from joining again (a name block: there are no passwords yet, so someone with
+   the code can still come in under another name). Kept fichas stay with the GM, under the old name. */
+app.delete('/api/members/:name', auth, async (req, res) => {
+  try {
+    const m = req.member;
+    if (!isGM(m)) return res.status(403).json({ error: 'so_mestre' });
+    const name = String(req.params.name || '');
+    const member = uniqueMembers(await store.listMembers(m.roomId)).find(x => x.name === name);
+    if (!member) return res.status(404).json({ error: 'jogador_nao_encontrado' });
+    if (member.role === 'gm' || name === m.name) return res.status(400).json({ error: 'nao_remove_mestre' });
+    const body = req.body || {};
+    if (body.deleteData) {
+      for (const b of await store.listBattles(m.roomId)) {
+        if (SIDES.some(s => b.sides[s].owner === name)) await store.deleteBattle(b.id);
+      }
+      for (const p of await store.listPokemon(m.roomId)) if (p.owner === name) await store.deletePokemon(p.id);
+      for (const t of await store.listTeams(m.roomId)) if (t.owner === name) await store.deleteTeam(t.id);
+      await store.deleteMediaOf(m.roomId, name);
+    } else {
+      await releaseTheme(member.theme, null);   // the theme lives on the member rows that are going away
+    }
+    await store.removeMember(m.roomId, name);
+    if (body.block) {
+      const room = await store.getRoom(m.roomId);
+      if (!isBlocked(room, name)) await store.setRoomBanned(m.roomId, [...(room.banned || []), name]);
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'erro_interno' });
+  }
+});
+
+app.delete('/api/room/banned/:name', auth, async (req, res) => {
+  try {
+    if (!isGM(req.member)) return res.status(403).json({ error: 'so_mestre' });
+    const room = await store.getRoom(req.member.roomId);
+    const name = String(req.params.name || '');
+    await store.setRoomBanned(room.id, (room.banned || []).filter(b => b !== name));
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'erro_interno' });
+  }
+});
+
 app.get('/api/state', auth, async (req, res) => {
   try {
     const m = req.member;
@@ -787,7 +851,7 @@ app.get('/api/state', auth, async (req, res) => {
     const members = isGM(m) ? uniqueMembers(await store.listMembers(m.roomId)) : [];
     const npcs = isGM(m) ? await store.listNpcs(m.roomId) : [];
     res.json({
-      room: { id: room.id, name: room.name, gmName: room.gmName },
+      room: { id: room.id, name: room.name, gmName: room.gmName, ...(isGM(m) ? { banned: room.banned || [] } : {}) },
       me: { name: m.name, role: m.role, avatar: m.avatar || '', theme: m.theme || null, character: m.character || '' },
       members, npcs, pokemon, teams, battles
     });
