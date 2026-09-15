@@ -517,19 +517,59 @@ function hpPct(p) {
   return Math.max(1, Math.min(100, Math.round((bt.hp / bt.maxHp) * 100)));
 }
 function fieldView(p, tera) {
-  const bt = p.battle || {};
+  const bt = p.battle || {}, tr = bt.transform;
   const stages = {};
   Object.entries(bt.stages || {}).forEach(([k, v]) => { if (v) stages[k] = v; });
   const [t1, t2] = typesInBattle(p);
   return { species: p.species, nickname: p.nickname || '', level: p.level, shiny: !!p.shiny, megaActive: megaActiveOf(p),
     type1: t1, type2: t2, hpPct: hpPct(p), stages,
-    status: STATUS_KEYS.includes(bt.status) ? bt.status : null, confused: !!bt.confused, tera: tera || null,
-    dmax: bt.dmax === 'gmax' || bt.dmax === 'dmax' ? bt.dmax : null };
+    status: STATUS_KEYS.includes(bt.status) ? bt.status : null, confused: !!bt.confused, tera: tera || (tr && tr.tera) || null,
+    dmax: bt.dmax === 'gmax' || bt.dmax === 'dmax' ? bt.dmax : null,
+    // transformed (Imposter / Transform): it keeps its name, but looks like the Pokémon it copied
+    ...(tr ? { transformed: tr.species, transformSprite: tr.spriteId || null } : {}) };
+}
+
+/* Illusion (Zoroark, Hisuian Zoroark, Zorua…), like the games: coming onto the field it looks like the last
+   Pokémon of its party that can still fight (none if that one is itself). The other side sees that one —
+   name, species, level, types — until a move hits it: only a move's direct damage breaks it, not end-of-turn
+   damage (weather, poison, burn, Leech Seed…). battle.illusion[side] = { mon, as } while it's on the field;
+   illusionSeen[mon] = as is how the other side remembers it if it left without being found out. */
+const hasIllusion = p => /^(illusion|ilus[aã]o)$/i.test(String((p && p.ability) || '').trim());
+function illusionDisguise(data, side, monId, mons) {
+  const party = data.party[side];
+  for (let i = party.length - 1; i >= 0; i--) {
+    const p = mons.find(x => x.id === party[i]);
+    if (!p || hpPct(p) === 0) continue;
+    return party[i] === monId ? null : party[i];
+  }
+  return null;
+}
+// the Pokémon it's disguised as right now (it's on the field under an unbroken illusion), or null
+function illusionOf(data, side, monId) {
+  const il = (data.illusion || {})[side];
+  return il && il.mon === monId && data.active[side] === monId ? il.as : null;
+}
+function applyIllusionOnEntry(data, side, monId, mons) {
+  data.illusion = data.illusion || { a: null, b: null };
+  data.illusionSeen = data.illusionSeen || {};
+  const p = mons.find(x => x.id === monId);
+  const as = p && hasIllusion(p) ? illusionDisguise(data, side, monId, mons) : null;
+  data.illusion[side] = as ? { mon: monId, as } : null;
+  if (as) data.illusionSeen[monId] = as;
+}
+function breakIllusion(data, side) {
+  const il = (data.illusion || {})[side];
+  if (!il) return;
+  data.illusion[side] = null;
+  if (data.illusionSeen) delete data.illusionSeen[il.mon];
+  pushLog(data, { k: 'illusion-end', side, mon: il.mon, was: il.as });
 }
 const STATUS_KEYS = ['brn', 'par', 'slp', 'psn', 'tox', 'frz'];
 // A ficha's `mega` is only which Mega it *can* use; it's active while battle.mega = { form, t1, t2, ability }.
 function megaActiveOf(p) { const m = (p.battle || {}).mega; return m && m.form ? m.form : ''; }
 function typesInBattle(p) {
+  const tr = (p.battle || {}).transform;
+  if (tr && tr.t1) return [tr.t1, tr.t2 || ''];   // transformed: the copied Pokémon's types
   const m = (p.battle || {}).mega;
   if (m && m.form && m.t1) return [m.t1, m.t2 || ''];
   if (p.megaBase) return [p.megaBase.type1, p.megaBase.type2 || ''];   // fichas saved while Mega used to swap types
@@ -539,7 +579,12 @@ const TERA_TYPES = ['Normal', 'Fogo', 'Água', 'Grama', 'Elétrico', 'Gelo', 'Lu
   'Voador', 'Psíquico', 'Inseto', 'Pedra', 'Fantasma', 'Dragão', 'Sombrio', 'Aço', 'Fada', 'Astral'];
 async function trainerInfo(roomId) {
   const info = {};
-  uniqueMembers(await store.listMembers(roomId)).forEach(x => { info[x.name] = { name: x.character || x.name, avatar: x.avatar, theme: x.theme || null }; });
+  // `art`: the trainer sheet's picture (high resolution), for the end-of-battle art's portrait;
+  // `stats`: its Status, for the public profile (clicking a trainer's icon). The notes stay private.
+  uniqueMembers(await store.listMembers(roomId)).forEach(x => {
+    info[x.name] = { name: x.character || x.name, avatar: x.avatar, theme: x.theme || null,
+      art: (x.sheet && x.sheet.art) || null, stats: (x.sheet && x.sheet.stats) || null };
+  });
   (await store.listNpcs(roomId)).forEach(n => { info[npcOwner(n.id)] = { name: n.name, avatar: n.avatar || '', theme: n.theme || null }; });
   return info;
 }
@@ -547,8 +592,10 @@ async function trainerInfo(roomId) {
    stage changes, the end) and keep ficha ids; each player gets them filtered and resolved. */
 const LOG_MAX = 300;
 const STAGE_STATS = ['atk', 'def', 'spa', 'spd', 'spe'];
+// A Pokémon under an illusion is logged with who it looks like (`as`), so the other side reads that name.
 function pushLog(data, entry) {
-  data.log = [...(data.log || []), { t: new Date().toISOString(), ...entry }].slice(-LOG_MAX);
+  const as = entry.mon && entry.side && entry.k !== 'illusion-end' ? illusionOf(data, entry.side, entry.mon) : null;
+  data.log = [...(data.log || []), { t: new Date().toISOString(), ...entry, ...(as ? { as } : {}) }].slice(-LOG_MAX);
 }
 // What changed between two `battle` states of a ficha, as log entries.
 function battleChangeEvents(before, after) {
@@ -579,9 +626,16 @@ function logForPlayer(b, you, byId) {
     .filter(e => !e.side || e.side === you || !e.mon || b.revealed[e.side].includes(e.mon))
     .map(e => {
       const out = { t: e.t, k: e.k };
+      const theirs = e.side && e.side !== you;   // someone else's Pokémon: an illusion fools this reader
       if (e.side) out.side = e.side;
-      if (e.mon) out.name = nameOf(e.mon);
-      if (e.prev && e.k === 'send') out.prevName = nameOf(e.prev);
+      if (e.mon) out.name = nameOf(theirs && e.as ? e.as : e.mon);
+      if (e.as && !theirs) out.asName = nameOf(e.as);   // their own Zoroark: who it's disguised as
+      if (e.prev && e.k === 'send') out.prevName = nameOf(theirs && e.prevAs ? e.prevAs : e.prev);
+      if (e.k === 'illusion-end') { out.name = nameOf(e.mon); out.wasName = nameOf(e.was); }
+      if (e.k === 'transform') {
+        const targetTheirs = e.targetSide !== you;
+        out.targetName = nameOf(targetTheirs && e.targetAs ? e.targetAs : e.target);
+      }
       if (e.k === 'hp') {
         if (you && e.side === you) Object.assign(out, { delta: e.delta, hp: e.hp, max: e.max });
         else out.pct = e.max ? Math.max(1, Math.round((Math.abs(e.delta) / e.max) * 100)) * Math.sign(e.delta) : 0;
@@ -642,7 +696,32 @@ function applyFieldEffect(data, key, kinds, body) {
   return true;
 }
 // why an HP change happened, when it's end-of-turn damage/healing (goes to the log)
-const RESIDUAL_REASONS = ['sand', 'hail', 'brn', 'psn', 'tox', 'grassy'];
+// ('residual' = the plain fraction buttons: Leech Seed, Curse, Leftovers…). A damaging HP change without a
+// reason is a move's hit — that's what breaks an Illusion.
+const RESIDUAL_REASONS = ['sand', 'hail', 'brn', 'psn', 'tox', 'grassy', 'residual'];
+
+// What a transformation copies (sent by the GM's client), cleaned: { transform, stages } or null
+function cleanTransform(x) {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) return null;
+  const type = t => (TERA_TYPES.includes(t) && t !== 'Astral' ? t : '');
+  const t1 = type(x.t1);
+  if (!t1) return null;
+  const stats = {}, stages = {};
+  STAGE_STATS.forEach(k => {
+    stats[k] = Math.max(1, Math.min(999, parseInt((x.stats || {})[k], 10) || 1));
+    const st = Math.max(-6, Math.min(6, parseInt((x.stages || {})[k], 10) || 0));
+    if (st) stages[k] = st;
+  });
+  return {
+    stages,
+    transform: {
+      mon: String(x.mon || '').slice(0, 40), species: String(x.species || '').slice(0, 60), form: String(x.form || '').slice(0, 60),
+      spriteId: Number.isInteger(x.spriteId) && x.spriteId > 0 ? x.spriteId : null, t1, t2: type(x.t2),
+      ability: String(x.ability || '').slice(0, 80), moves: cleanMegaSheet({ moves: x.moves }).moves, stats,
+      tera: TERA_TYPES.includes(x.tera) ? x.tera : null
+    }
+  };
+}
 
 // Tera type a side's Pokémon is using in this battle (null if it hasn't terastallized)
 function teraOf(b, side, monId) {
@@ -662,15 +741,26 @@ function battleMonLookup(b, roomMons) {
 // the ones already used. Moves, Status, ability and exact HP stay on the server.
 function publicSideView(b, s, byId) {
   const active = byId(b.active[s]);
+  // under an illusion it looks like the Pokémon it copies (with its own HP, stages and conditions)
+  const disguised = (p, asId) => { const d = asId && byId(asId); return d ? { ...d, id: p.id, battle: p.battle } : p; };
+  const activeLook = active ? disguised(active, illusionOf(b, s, active.id)) : null;
   return {
     partySize: b.party[s].map(byId).filter(Boolean).length,
-    active: active ? fieldView(active, teraOf(b, s, active.id)) : null,
-    // every Pokémon of theirs that has been on the field, in order of appearance
-    seen: b.revealed[s].map(byId).filter(Boolean).map(p => ({
-      species: p.species, nickname: p.nickname || '', level: p.level, shiny: !!p.shiny, megaActive: megaActiveOf(p),
-      fainted: hpPct(p) === 0, active: p.id === b.active[s],
-      art: artShownFor(p)   // for the end-of-battle art only (the arena keeps the official sprite)
-    }))
+    active: activeLook ? fieldView(activeLook, teraOf(b, s, active.id)) : null,
+    // every Pokémon of theirs that has been on the field, in order of appearance (a Zoroark that was never
+    // found out stays remembered as its disguise)
+    seen: b.revealed[s].map(byId).filter(Boolean).map(real => {
+      const p = disguised(real, (b.illusionSeen || {})[real.id]);
+      // the form it's in (at the end, or when it was knocked out) — for the end-of-battle art
+      const bt = p.battle || {}, ff = (b.faintForm || {})[real.id] || {};
+      return {
+        species: p.species, nickname: p.nickname || '', level: p.level, shiny: !!p.shiny, megaActive: megaActiveOf(p) || ff.mega || '',
+        fainted: hpPct(p) === 0, active: real.id === b.active[s],
+        tera: teraOf(b, s, real.id), dmax: bt.dmax === 'gmax' || bt.dmax === 'dmax' ? bt.dmax : (ff.dmax || null),
+        transformSprite: (bt.transform && bt.transform.spriteId) || ff.transformSprite || null,
+        art: artShownFor(p)   // for the end-of-battle art only (the arena keeps the official sprite)
+      };
+    })
   };
 }
 function battleHeader(b, info) {
@@ -688,7 +778,11 @@ function playerBattleView(b, me, roomMons, info) {
     mine: {
       party: b.party[you].filter(id => byId(id)), active: b.active[you], used: b.revealed[you].filter(id => byId(id)),
       final: final ? Object.fromEntries(b.party[you].filter(id => final[id]).map(id => [id, final[id]])) : null,
-      tera: (b.tera || {})[you] || null, mega: (b.mega || {})[you] || null
+      tera: (b.tera || {})[you] || null, mega: (b.mega || {})[you] || null,
+      // their own Zoroark on the field under an illusion: { mon, as } (they know; the other side doesn't)
+      illusion: illusionOf(b, you, b.active[you]) ? b.illusion[you] : null,
+      // the form each of theirs was knocked out in (for the end-of-battle art)
+      faintForm: Object.fromEntries(b.party[you].filter(id => (b.faintForm || {})[id]).map(id => [id, b.faintForm[id]]))
     },
     foe: publicSideView(b, otherSide(you), byId),
     log: logForPlayer(b, you, byId)
@@ -1163,12 +1257,27 @@ app.patch('/api/pokemon/:id/battle', auth, async (req, res) => {
       // log the change in every running battle this Pokémon is part of (with the reason, for end-of-turn damage)
       const why = RESIDUAL_REASONS.includes(req.body.reason) ? req.body.reason : null;
       const events = battleChangeEvents(p.battle, req.body.battle).map(e => (why && e.k === 'hp' ? { ...e, why } : e));
+      // a move's hit (lost HP without an end-of-turn reason) breaks an Illusion
+      const hit = !why && events.some(e => e.k === 'hp' && e.delta < 0);
+      // Knocked out, it's remembered in the form it fell in (Dynamax and a transformation end when it leaves
+      // the field, so the end-of-battle art would lose them); brought back, that's forgotten.
+      const nb = req.body.battle || {}, ob = p.battle || {};
+      const fainted = events.some(e => e.k === 'faint');
+      const revived = ob.hp !== undefined && ob.hp !== null && ob.hp <= 0 && !(nb.hp !== undefined && nb.hp !== null && nb.hp <= 0);
       if (events.length) {
         for (const b of await store.listBattles(m.roomId)) {
           const side = b.status === 'active' && SIDES.find(s => b.party[s].includes(p.id));
           if (!side) continue;
           const { id: battleId, ...bdata } = b;
-          events.forEach(e => pushLog(bdata, { ...e, side, mon: p.id }));
+          events.forEach(e => pushLog(bdata, { ...e, side, mon: p.id }));   // still logged under the disguise
+          if (hit && illusionOf(bdata, side, p.id)) breakIllusion(bdata, side);
+          if (fainted) {
+            bdata.faintForm = { ...(bdata.faintForm || {}), [p.id]: {
+              dmax: nb.dmax === 'gmax' || nb.dmax === 'dmax' ? nb.dmax : null,
+              mega: nb.mega && nb.mega.form ? nb.mega.form : '',
+              transformSprite: nb.transform && nb.transform.spriteId ? nb.transform.spriteId : null
+            } };
+          } else if (revived && bdata.faintForm) delete bdata.faintForm[p.id];
           await store.upsertBattle(battleId, m.roomId, bdata);
         }
       }
@@ -1248,10 +1357,14 @@ app.post('/api/battles', auth, async (req, res) => {
       active: { a: party.a[0], b: party.b[0] },
       revealed: { a: [party.a[0]], b: [party.b[0]] },   // everything that has been on the field, in order
       winner: null, tera: { a: null, b: null }, dmax: { a: null, b: null }, mega: { a: null, b: null },
-      weather: null, terrain: null, createdAt: new Date().toISOString(), log: []
+      weather: null, terrain: null, illusion: { a: null, b: null }, illusionSeen: {},
+      createdAt: new Date().toISOString(), log: []
     };
     pushLog(data, { k: 'start' });
-    SIDES.forEach(s => pushLog(data, { k: 'send', side: s, mon: party[s][0] }));
+    SIDES.forEach(s => {
+      applyIllusionOnEntry(data, s, party[s][0], mons);   // a Zoroark leading comes in disguised
+      pushLog(data, { k: 'send', side: s, mon: party[s][0] });
+    });
     const id = uid();
     await store.upsertBattle(id, m.roomId, data);
     res.json({ id, ...data });
@@ -1277,12 +1390,47 @@ app.patch('/api/battles/:id', auth, async (req, res) => {
         pushLog(data, { k: 'dmax-end', side, mon: prev });
       }
       if (prev !== monId) {
+        // leaving, a disguised Pokémon drops its illusion (the other side still remembers it as the disguise)
+        const prevAs = illusionOf(data, side, prev);
+        if (data.illusion) data.illusion[side] = null;
         data.active[side] = monId;
         if (!data.revealed[side].includes(monId)) data.revealed[side].push(monId);
-        pushLog(data, { k: 'send', side, mon: monId, prev });
-        // like the games, the bad poison counter starts over when the Pokémon leaves the field
+        applyIllusionOnEntry(data, side, monId, await store.listPokemon(roomId));   // a Zoroark comes in disguised
+        pushLog(data, { k: 'send', side, mon: monId, prev, ...(prevAs ? { prevAs } : {}) });
+        // like the games, leaving the field starts the bad poison counter over and ends a transformation
         const pp = prev ? await store.getPokemon(prev) : null;
-        if (pp && pp.battle && pp.battle.toxN) { const { toxN, ...bt } = pp.battle; await setMonBattle(pp, roomId, bt); }
+        if (pp && pp.battle && (pp.battle.toxN || pp.battle.transform)) {
+          const { toxN, transform, ...bt } = pp.battle;
+          await setMonBattle(pp, roomId, bt);
+        }
+      }
+    }
+    if (body.illusion) {   // GM: the disguise found out by other means
+      const side = body.illusion.side;
+      if (!SIDES.includes(side) || !illusionOf(data, side, data.active[side])) return res.status(400).json({ error: 'ilusao_invalida' });
+      breakIllusion(data, side);
+    }
+    if (body.transform) {
+      // Imposter / Transform: the Pokémon on the field copies the one facing it. The GM's client works out the
+      // copy (the Status formulas live there): looks, types, Status but HP, ability, moves, stages, Tera and
+      // Mega — not Dynamax. It lasts until it leaves the field. { clear: true } undoes it.
+      const side = body.transform.side;
+      if (!SIDES.includes(side) || data.status !== 'active') return res.status(400).json({ error: 'transform_invalido' });
+      const monId = data.active[side], p = await store.getPokemon(monId);
+      if (!p) return res.status(400).json({ error: 'transform_invalido' });
+      if (body.transform.clear) {
+        if (p.battle && p.battle.transform) {
+          const { transform, ...bt } = p.battle;
+          await setMonBattle(p, roomId, bt);
+          pushLog(data, { k: 'transform-end', side, mon: monId });
+        }
+      } else {
+        const other = otherSide(side), targetId = data.active[other];
+        const snap = cleanTransform(body.transform.snapshot);
+        if (!snap || !targetId || snap.transform.mon !== targetId) return res.status(400).json({ error: 'transform_invalido' });
+        await setMonBattle(p, roomId, { ...(p.battle || {}), transform: snap.transform, stages: snap.stages });
+        const targetAs = illusionOf(data, other, targetId);
+        pushLog(data, { k: 'transform', side, mon: monId, target: targetId, targetSide: other, ...(targetAs ? { targetAs } : {}) });
       }
     }
     for (const key of ['weather', 'terrain']) {

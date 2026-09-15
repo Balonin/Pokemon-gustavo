@@ -334,6 +334,14 @@ body.in-room { max-width: none; padding: 12px; }
 .ts-edit { display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 4px; }
 .ts-edit input { width: 54px; text-align: center; padding: 3px 4px; font-size: 1rem; }
 .ts-edit .mini-btn { padding: 3px 8px; }
+.ts-private { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; padding: 20px; font-size: 0.8rem; line-height: 1.6; color: var(--ink-soft); }
+.ts-private[hidden], #tsNotes[hidden], .trainer-sheet .btn[hidden], .trainer-sheet .shiny-btn[hidden] { display: none; }
+.trainer-sheet.readonly .stat-box { cursor: default; }
+/* a trainer's icon opens their character sheet, like a profile */
+[data-profile], [data-profile-battle], [data-open-trainer] { cursor: pointer; }
+.bt-trainer[data-profile]:hover span, .bl-who[data-profile-battle]:hover span { text-decoration: underline; }
+[data-profile]:hover .av, [data-profile-battle]:hover .av, [data-open-trainer]:hover .av, .av[data-open-trainer]:hover { border-color: var(--gold); }
+.bl-who { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .ts-sub { font-family: var(--font-input); font-size: 0.85rem; color: var(--ink-soft); margin-top: 4px; }
 /* on a short screen the card may still scroll: its buttons stay at the bottom edge, always reachable */
 .move-card.editing .mv-remove-row { position: sticky; bottom: 0; margin-top: 5px; padding-top: 6px; background: var(--panel); }
@@ -990,13 +998,14 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
           </div>
           <div class="capture-area">
             <div class="col-stats">
-              <div class="points-banner">Status do treinador · livres, até 90</div>
+              <div class="points-banner" id="tsBanner">Status do treinador · livres, até 90</div>
               <div class="stats-grid" id="tsStats"></div>
             </div>
             <div class="col-moves">
               <div class="ts-notes-box">
                 <div class="ts-notes-l">Anotações</div>
                 <textarea id="tsNotes" placeholder="História, inventário, perícias, o que quiser anotar…"></textarea>
+                <div class="ts-private" id="tsPrivate" hidden>🔒 As anotações são privadas: só o próprio treinador e o Mestre veem.</div>
               </div>
             </div>
             <div class="col-art">
@@ -1390,18 +1399,27 @@ function megaFormOf(m) {
   const bm = (m.battle || {}).mega;
   return bm && bm.form ? bm.form : '';
 }
+// Transformed (Imposter / Transform), a Pokémon uses the copy in battle.transform: the looks, types,
+// Status (but HP), ability and moves of the one it copied (see transformSnapshot)
+function transformOf(m) { const tr = m && m.battle && m.battle.transform; return tr && tr.t1 ? tr : null; }
 // types and ability in battle: an official Mega's while it is active
 function battleTypesOf(m) {
+  const tr = transformOf(m);
+  if (tr) return [tr.t1, tr.t2 || ''];
   const bm = (m.battle || {}).mega;
   return bm && bm.form && bm.t1 ? [bm.t1, bm.t2 || ''] : [m.type1, m.type2 || ''];
 }
 // ability and moves in battle: the Mega sheet's while the Mega is active
 function battleAbilityOf(m) {
+  const tr = transformOf(m);
+  if (tr) return tr.ability || '';
   const bm = (m.battle || {}).mega;
   if (!(bm && bm.form)) return m.ability || '';
   return (m.megaSheet && m.megaSheet.ability) || bm.ability || m.ability || '';
 }
 function battleMovesOf(m) {
+  const tr = transformOf(m);
+  if (tr) return tr.moves || [];
   const bm = (m.battle || {}).mega;
   return bm && bm.form && m.megaSheet && Array.isArray(m.megaSheet.moves) ? m.megaSheet.moves : (m.moves || []);
 }
@@ -1423,6 +1441,9 @@ function megaViewOf(m) {
 }
 // sprite id: the official Mega's while Mega-evolved (if PokeAPI has it), else the Pokémon's own
 function spriteIdOf(m) {
+  const tr = transformOf(m);   // transformed: the copied Pokémon's sprite (its Mega's, if it copied a Mega)
+  if (tr && tr.spriteId) return tr.spriteId;
+  if (m.transformSprite) return m.transformSprite;   // the opponent's field view of a transformed Pokémon
   const form = megaFormOf(m);
   const opt = form && form !== BATTLE_BOUND ? megaOption(m.species, form) : null;
   if (opt && opt.id) return opt.id;
@@ -1499,6 +1520,8 @@ function condBadgesHtml(f) {
   if (f.tera) out.push(`<span class="cond tera" style="--c:${TERA_COLORS[f.tera] || '#5fb8c8'}">◆ TERA ${esc(f.tera)}</span>`);
   if (f.status && STATUS[f.status]) out.push(`<span class="cond" style="--c:${STATUS[f.status].color}">${STATUS[f.status].label}</span>`);
   if (f.confused) out.push(`<span class="cond" style="--c:${CONFUSED_COLOR}">Confuso</span>`);
+  if (f.transform) out.push(`<span class="cond" style="--c:#8a6ac8" title="Transformado">🔄 ${esc(f.transform)}</span>`);
+  if (f.illusion) out.push(`<span class="cond" style="--c:#4a3464" title="Ilusão: o adversário vê ${esc(f.illusion)}">🎭 como ${esc(f.illusion)}</span>`);
   if (f.mega) out.unshift(`<span class="cond mega">${f.mega === BATTLE_BOUND ? 'BATTLE BOUND' : 'MEGA'}</span>`);
   if (f.dmax) out.unshift(`<span class="cond dmax" style="--c:${DMAX_COLOR}">${f.dmax === 'gmax' ? '✦ GIGANTAMAX' : '⬤ DYNAMAX'}</span>`);
   return out.join('');
@@ -1595,14 +1618,15 @@ function esc(s) {
 // Every trainer in sidebar order: you, the players, owners with no member record, then NPCs.
 // `key` is what goes in a ficha's `owner`.
 function roomTrainers() {
-  const list = [{ key: currentTrainer, name: myName(), kind: isGM() ? 'gm' : 'player', avatar: myAvatar, theme: myTheme }];
+  // `art`: the trainer sheet's picture (high resolution; the end-of-battle art uses it as the portrait)
+  const list = [{ key: currentTrainer, name: myName(), kind: isGM() ? 'gm' : 'player', avatar: myAvatar, theme: myTheme, art: (mySheet && mySheet.art) || null }];
   if (!isGM()) return list;
   const seen = new Set([currentTrainer]);
   allNpcs.forEach(n => seen.add(NPC_PREFIX + n.id));
   allMembers.forEach(mb => {
     if (seen.has(mb.name)) return;
     seen.add(mb.name);
-    list.push({ key: mb.name, name: mb.character || mb.name, kind: mb.role === 'gm' ? 'gm' : 'player', avatar: mb.avatar, theme: mb.theme || null });
+    list.push({ key: mb.name, name: mb.character || mb.name, kind: mb.role === 'gm' ? 'gm' : 'player', avatar: mb.avatar, theme: mb.theme || null, art: (mb.sheet && mb.sheet.art) || null });
   });
   allMons.forEach(m => {
     if (!m.owner || seen.has(m.owner)) return;
@@ -2057,6 +2081,8 @@ function finalStatsFor(m) {
     }
     out[k] = v;
   });
+  const tr = transformOf(m);   // transformed: the copied Status, all but HP
+  if (tr && tr.stats) STAGE_KEYS.forEach(k => { if (tr.stats[k]) out[k] = tr.stats[k]; });
   return out;
 }
 // GM: what the extra Status actually add to each stat (after the cap: +8 on an 88 only adds 2)
@@ -2178,7 +2204,9 @@ function renderSheetOwner() {
   if (draftId) {
     const t = trainerOf(draft.owner);
     const login = loginOf(t);
-    el.innerHTML = `${avatarHtml(t.avatar, t.name)}<span class="owner-names"><b>${esc(t.name)}${t.kind === 'npc' ? ' · NPC' : ''}</b>${login ? `<small>${t.kind === 'gm' ? 'mestre' : 'jogador'}: ${esc(login)}</small>` : ''}</span>`;
+    const icon = t.kind !== 'npc' && !t.gone
+      ? `<span data-open-trainer="${esc(t.key)}" title="Ver a ficha de ${esc(t.name)}">${avatarHtml(t.avatar, t.name)}</span>` : avatarHtml(t.avatar, t.name);
+    el.innerHTML = `${icon}<span class="owner-names"><b>${esc(t.name)}${t.kind === 'npc' ? ' · NPC' : ''}</b>${login ? `<small>${t.kind === 'gm' ? 'mestre' : 'jogador'}: ${esc(login)}</small>` : ''}</span>`;
     return;
   }
   const trainers = roomTrainers();
@@ -2782,14 +2810,44 @@ function trainerSheetOf(key) {
   TRAINER_STATS.forEach(k => { stats[k] = (src && src.stats && src.stats[k]) || 0; });
   return { stats, notes: (src && src.notes) || '', art: (src && src.art) || null };
 }
-function openTrainerSheet(key) {
+function showTrainerSheetHost(readonly) {
   if (draft) closeSheet();
-  tsCtx = { key, sheet: trainerSheetOf(key), editing: null, crop: null };
   ['sheetHost', 'emptyState', 'teamsPanel', 'battlePanel'].forEach(id => { document.getElementById(id).style.display = 'none'; });
   document.getElementById('trainerSheetHost').style.display = 'block';
+  // a profile (someone else's, for a player) is read-only and its notes stay private
+  document.querySelector('.trainer-sheet').classList.toggle('readonly', readonly);
+  ['tsSaveBtn', 'tsCancelBtn', 'tsArtBtn'].forEach(id => { document.getElementById(id).hidden = readonly; });
+  document.getElementById('tsNotes').hidden = readonly;
+  document.getElementById('tsPrivate').hidden = !readonly;
+  document.getElementById('tsBanner').textContent = readonly ? 'Status do treinador' : 'Status do treinador · livres, até 90';
+}
+function openTrainerSheet(key) {
+  tsCtx = { key, sheet: trainerSheetOf(key), editing: null, crop: null, readonly: false };
+  showTrainerSheetHost(false);
   document.getElementById('tsNotes').value = tsCtx.sheet.notes;
   renderTrainerSheet();
 }
+// Someone else's character as a profile (clicking their icon): name, picture and Status, read-only.
+// info = what the battle brings about a trainer ({ name, avatar, art, stats }); no stats = no sheet (an NPC).
+function openTrainerProfile(info) {
+  const stats = {};
+  TRAINER_STATS.forEach(k => { stats[k] = info.stats ? (info.stats[k] || 0) : null; });
+  tsCtx = { key: null, info, sheet: { stats, notes: '', art: info.art || null }, editing: null, readonly: true };
+  showTrainerSheetHost(true);
+  document.getElementById('tsPrivate').textContent = info.stats ? '🔒 As anotações são privadas: só o próprio treinador e o Mestre veem.'
+    : (info.kind === 'npc' ? 'NPCs não têm ficha de treinador.' : 'Esse treinador ainda não preencheu a ficha.');
+  renderTrainerSheet();
+}
+// a trainer of a battle, from their icon: the GM gets the sheet (editable; an NPC's profile), a player their
+// own sheet or the other trainer's profile
+function openBattleTrainer(b, side) {
+  if (isGM()) {
+    const key = b.sides[side].owner, t = trainerOf(key);
+    if (t.kind === 'npc' || t.gone) openTrainerProfile({ ...t, stats: null }); else openTrainerSheet(key);
+  } else if (!b.spectator && side === b.you) openTrainerSheet(currentTrainer);
+  else openTrainerProfile(b.trainers[side] || { name: '?' });
+}
+function tsTrainer() { return tsCtx.info || trainerOf(tsCtx.key); }
 function closeTrainerSheet() {
   if (!tsCtx) return;
   tsCtx = null;
@@ -2799,9 +2857,9 @@ function closeTrainerSheet() {
 }
 function trainerStatBox(k) {
   const v = tsCtx.sheet.stats[k], editing = tsCtx.editing === k;
-  return `<div class="stat-box${editing ? ' editing' : ''}" data-ts="${k}" title="${TRAINER_STAT_NAME[k]}">
-    <div class="stat-top"><div class="label">${TRAINER_STAT_LABEL[k]}</div><div class="value">${v}</div></div>
-    <div class="crit-corner" title="Margem de crítico (10%)">${roundStatus(v * 0.1)}</div>
+  return `<div class="stat-box${editing ? ' editing' : ''}${tsCtx.readonly ? ' ro' : ''}" data-ts="${k}" title="${TRAINER_STAT_NAME[k]}">
+    <div class="stat-top"><div class="label">${TRAINER_STAT_LABEL[k]}</div><div class="value">${v === null ? '—' : v}</div></div>
+    <div class="crit-corner" title="Margem de crítico (10%)">${v === null ? '—' : roundStatus(v * 0.1)}</div>
     ${editing ? `<div class="ts-edit">
       <button class="mini-btn" data-ts-step="-1" title="−1">−</button>
       <input class="ts-val" inputmode="numeric" maxlength="2" autocomplete="off" value="${v}" aria-label="${TRAINER_STAT_NAME[k]}">
@@ -2819,18 +2877,18 @@ function renderTrainerSheet() {
 // who it is (name, icon, picture): redrawn when the state comes in, without touching what's being edited
 function renderTrainerHead() {
   if (!tsCtx) return;
-  const t = trainerOf(tsCtx.key), login = loginOf(t), mine = tsCtx.key === currentTrainer;
+  const t = tsTrainer(), login = loginOf(t), mine = tsCtx.key === currentTrainer;
   document.getElementById('tsOwner').innerHTML = mine ? '<span>Sua ficha de treinador</span>'
-    : `${avatarHtml(t.avatar, t.name)}<span class="owner-names"><b>${esc(t.name)}</b>${login ? `<small>jogador: ${esc(login)}</small>` : ''}</span>`;
+    : `${avatarHtml(t.avatar, t.name)}<span class="owner-names"><b>${esc(t.name)}</b>${login ? `<small>jogador: ${esc(login)}</small>` : (tsCtx.readonly ? '<small>perfil</small>' : '')}</span>`;
   document.getElementById('tsCharBtn').hidden = !mine;   // name / icon / music: each trainer sets their own
   document.getElementById('tsHeader').innerHTML = `<div class="header-row"><div>
     <div class="header-name">${esc(t.name)}</div>
-    <div class="ts-sub">${login ? `jogador: ${esc(login)}` : (t.kind === 'gm' ? 'Mestre' : 'Treinador')}</div></div></div>`;
+    <div class="ts-sub">${login ? `jogador: ${esc(login)}` : (t.kind === 'gm' ? 'Mestre' : (t.kind === 'npc' ? 'NPC' : 'Treinador'))}</div></div></div>`;
   renderTrainerArt();
 }
 // the sheet's picture: its own (high resolution), else the trainer's icon enlarged
 function trainerArtLook(art) {
-  const t = trainerOf(tsCtx.key);
+  const t = tsTrainer();
   if (art && (art.data || art.id)) return { src: art.data || '/media/' + encodeURIComponent(art.id), smooth: !art.pixel };
   const mon = /^mon:(\d+)$/.exec(t.avatar || '');
   if (mon) return { src: spriteImg(mon[1]), smooth: false };
@@ -2855,6 +2913,7 @@ function setTrainerStat(k, v, fromInput) {
   if (input && (!fromInput || String(n) !== input.value)) input.value = n;
 }
 function onTrainerStatsClick(ev) {
+  if (!tsCtx || tsCtx.readonly) return;
   const step = ev.target.closest('[data-ts-step]');
   if (step) { const k = tsCtx.editing; setTrainerStat(k, tsCtx.sheet.stats[k] + parseInt(step.dataset.tsStep, 10)); return; }
   if (ev.target.closest('.ts-edit')) return;
@@ -3245,20 +3304,54 @@ function miniSpriteHtml(m) {
 
 // What an HP box shows. Only full information has HP numbers; the opponent, for a player, is just the bar.
 function fieldInfo(m, tera) {
-  const max = maxHpOf(m), cur = curHpOf(m), stages = {}, bt = m.battle || {};
+  const max = maxHpOf(m), cur = curHpOf(m), stages = {}, bt = m.battle || {}, tr = transformOf(m);
   STAGE_KEYS.forEach(k => { const st = stageOf(m, k); if (st) stages[k] = st; });
   return { name: m.nickname || m.species, level: m.level, shiny: !!m.shiny, pct: max ? (cur / max) * 100 : 0, cur, max, stages,
-    fainted: cur <= 0, status: bt.status || null, confused: !!bt.confused, tera: tera || null, dmax: bt.dmax || null, mega: megaFormOf(m) };
+    fainted: cur <= 0, status: bt.status || null, confused: !!bt.confused, tera: tera || null, dmax: bt.dmax || null, mega: megaFormOf(m),
+    transform: tr ? tr.species : null };
 }
 function fieldInfoFromView(v) {
   return { name: v.nickname || v.species, level: v.level, shiny: v.shiny, pct: v.hpPct, stages: v.stages || {}, fainted: v.hpPct <= 0,
-    status: v.status || null, confused: !!v.confused, tera: v.tera || null, dmax: v.dmax || null, mega: v.megaActive || '' };
+    status: v.status || null, confused: !!v.confused, tera: v.tera || null, dmax: v.dmax || null, mega: v.megaActive || '',
+    transform: v.transformed || null };
 }
-// Tera type a Pokémon is using in this battle (null if not terastallized). The opponent's, for a
-// player, comes already resolved in its field view.
+// Tera type a Pokémon is using in this battle (null if not terastallized): its side's, or the one it
+// copied transforming. The opponent's, for a player, comes already resolved in its field view.
 function battleTera(b, side, monId) {
   const t = isGM() ? (b.tera || {})[side] : (side === b.you ? b.mine.tera : null);
-  return t && t.mon === monId ? t.type : null;
+  if (t && t.mon === monId) return t.type;
+  const tr = transformOf(battleMon(b, monId));
+  return (tr && tr.tera) || null;
+}
+// Illusion: who a Pokémon on the field is disguised as, for a viewer who knows (the GM, or its owner)
+function illusionAs(b, side, monId) {
+  if (isGM()) { const il = (b.illusion || {})[side]; return il && il.mon === monId && b.active[side] === monId ? il.as : null; }
+  const il = side === b.you && b.mine ? b.mine.illusion : null;
+  return il && il.mon === monId ? il.as : null;
+}
+const hasImposter = m => /^(imposter|impostor)$/i.test(String((m && m.ability) || '').trim());
+// The copy a transforming Pokémon makes of the one facing it (worked out here, where the Status formulas
+// are): looks (its Mega's too), types, Status but HP, ability, moves, stages and Tera — not Dynamax.
+function transformSnapshot(b, side) {
+  const other = side === 'a' ? 'b' : 'a';
+  const target = battleMon(b, b.active[other]);
+  if (!target) return null;
+  const stats = finalStatsFor(target), [t1, t2] = battleTypesOf(target), stages = {}, st = {};
+  STAGE_KEYS.forEach(k => { st[k] = stats[k]; const s = stageOf(target, k); if (s) stages[k] = s; });
+  const ttr = transformOf(target);
+  return { mon: target.id, species: ttr ? ttr.species : target.species, form: megaFormOf(target) || (ttr ? ttr.form : ''),
+    spriteId: spriteIdOf(target) || null, t1, t2, ability: battleAbilityOf(target),
+    moves: battleMovesOf(target).map(mv => ({ ...mv })), stats: st, tera: battleTera(b, other, target.id), stages };
+}
+function transformIn(side) {
+  const b = openBattle();
+  const snapshot = b && transformSnapshot(b, side);
+  if (snapshot) return patchBattleRoom({ transform: { side, snapshot } });
+}
+// Imposter: coming onto the field it transforms into the first Pokémon it sees (the one facing it)
+async function imposterCheck(side) {
+  const b = openBattle();
+  if (b && b.status === 'active' && hasImposter(monById(b.active[side]))) await transformIn(side);
 }
 function hpBoxHtml(f, cls) {
   const stages = Object.entries(f.stages)
@@ -3303,7 +3396,7 @@ function sideStripHtml(side, pos, control) {
     empty = 'Nenhum outro Pokémon usado ainda';
   }
   return `<div class="bt-bench bench-${pos}">
-    <div class="bt-trainer">${avatarHtml(t.avatar, t.name)}<span>${esc(t.name)}</span></div>
+    <div class="bt-trainer" data-profile="${esc(side.key)}" role="button" tabindex="0" title="Ver a ficha de ${esc(t.name)}">${avatarHtml(t.avatar, t.name)}<span>${esc(t.name)}</span></div>
     ${balls}
     <div class="bt-bench-label">${side.full ? 'Banco' : 'Já utilizados'}</div>
     <div class="bt-bench-list">${tiles || `<span class="bench-empty">${empty}</span>`}</div>
@@ -3334,7 +3427,8 @@ function residualRowHtml(m, b, types) {
   }
   const tr = b.terrain && TERRAIN[b.terrain.kind];
   if (tr && tr.heal && isGrounded(m, types)) now.push(btn('Grama', residualOf(m, tr.heal), b.terrain.kind, `${tr.label}: recupera 1/${tr.heal} do HP no fim do turno`, true));
-  const frac = [16, 8, 4, 2].map(n => btn(`1/${n}`, residualOf(m, n), '', `Tirar 1/${n} do HP máximo${n === 8 ? ' (ex.: Leech Seed, Bind, Stealth Rock neutro)' : n === 4 ? ' (ex.: Curse, Nightmare)' : ''}`)).join('')
+  // (indirect damage: it's logged as end-of-turn and doesn't break an Illusion, unlike the −10/−5/−1/Dano hits)
+  const frac = [16, 8, 4, 2].map(n => btn(`1/${n}`, residualOf(m, n), 'residual', `Tirar 1/${n} do HP máximo${n === 8 ? ' (ex.: Leech Seed, Bind, Stealth Rock neutro)' : n === 4 ? ' (ex.: Curse, Nightmare)' : ''}`)).join('')
     + [16, 2].map(n => btn(`1/${n}`, residualOf(m, n), '', `Recuperar 1/${n} do HP máximo${n === 16 ? ' (ex.: Leftovers)' : ' (ex.: Recover, Roost)'}`, true)).join('');
   return `<div class="bt-dmg bt-res"><span class="bt-status-l" title="Dano e cura de fim de turno, já calculados pelo HP máximo">Fim de turno</span>${now.join('')}${now.length ? '<span class="res-sep"></span>' : ''}${frac}</div>`;
 }
@@ -3399,6 +3493,16 @@ function movePanelHtml(pos, m, control, heading, showChart, ctx) {
         + (sideDmax.mon === m.id ? `<button class="mini-btn" data-act="dmax-undo" data-side="${ctx.side}">Desfazer</button>` : '');
     }
   }
+  // Illusion found out by other means, and Imposter / Transform (automatic for Imposter on entering)
+  let formBtns = '';
+  if (control && ctx) {
+    const as = monById(illusionAs(ctx.b, ctx.side, m.id));
+    if (as) formBtns += `<button class="mini-btn" data-act="illusion-end" data-side="${ctx.side}" title="O adversário vê ${esc(as.nickname || as.species)}; um golpe que causa dano desfaz sozinho">🎭 Desfazer ilusão</button>`;
+    if (transformOf(m)) formBtns += `<button class="mini-btn" data-act="transform-undo" data-side="${ctx.side}">Desfazer transformação</button>`;
+    else if (hasImposter(m) || (m.moves || []).some(mv => mv && /^transform$/i.test(mv.name || ''))) {
+      formBtns += `<button class="mini-btn" data-act="transform" data-side="${ctx.side}" title="Copia o Pokémon em campo do outro lado: tipos, Status (menos HP), ability, golpes, estágios, Tera e Mega (não o Dynamax)">🔄 Transformar</button>`;
+    }
+  }
   const statusRow = !control ? '' : `<div class="bt-status"><span class="bt-status-l">Status</span>${Object.entries(STATUS).map(([k, st]) =>
       `<button class="st-btn${bt.status === k ? ' on' : ''}" style="--c:${st.color}" data-act="status" data-id="${id}" data-s="${k}" title="${st.label}">${st.short}</button>`).join('')}
     <button class="st-btn${bt.confused ? ' on' : ''}" style="--c:${CONFUSED_COLOR}" data-act="confuse" data-id="${id}" title="Confuso (acumula com os outros)">CONF</button>
@@ -3449,6 +3553,7 @@ function movePanelHtml(pos, m, control, heading, showChart, ctx) {
       ${megaBtn}
       ${teraBtn}
       ${dmaxBtn}
+      ${formBtns}
       ${canEditMon(m) ? `<button class="mini-btn" data-act="sheet" data-id="${id}">Abrir ficha</button>` : ''}
     </div>
   </div>`;
@@ -3656,17 +3761,24 @@ function renderMusicBar() {
 
 // ----- Battle log (entries come from the server; a player's copy is already filtered) -----
 const RESIDUAL_LOG = { sand: 'foi atingido pela tempestade de areia', hail: 'foi atingido pelo granizo', brn: 'sofreu com a queimadura',
-  psn: 'sofreu com o veneno', tox: 'sofreu com o veneno', grassy: 'foi curado pelo Campo de Grama' };
+  psn: 'sofreu com o veneno', tox: 'sofreu com o veneno', grassy: 'foi curado pelo Campo de Grama', residual: 'no fim do turno' };
 function logText(b, e) {
   const t = battleTrainers(b);
   const tn = s => `<b>${esc((t[s] || {}).name || '—')}</b>`;
   const nameOf = id => { const m = monById(id); return m ? (m.nickname || m.species) : '?'; };
+  // a player's copy comes with names already resolved (an opponent's Zoroark under its disguise's name)
   const mon = esc(isGM() ? nameOf(e.mon) : (e.name || '?'));
   const prev = esc(isGM() ? nameOf(e.prev) : (e.prevName || '?'));
+  // the GM, and a Zoroark's owner, see who it was pretending to be
+  const asName = isGM() ? (e.as ? nameOf(e.as) : '') : (e.asName || '');
+  const disguise = asName && e.k === 'send' ? ` <span class="log-fx">(disfarçado de ${esc(asName)})</span>` : '';
   const whose = e.side ? `${mon} de ${tn(e.side)}` : mon;
   switch (e.k) {
     case 'start': return `A batalha começou: ${tn('a')} VS ${tn('b')}!`;
-    case 'send': return (e.prev || e.prevName) ? `${tn(e.side)} recolheu ${prev} e mandou <b>${mon}</b>!` : `${tn(e.side)} mandou <b>${mon}</b>!`;
+    case 'send': return (e.prev || e.prevName) ? `${tn(e.side)} recolheu ${prev} e mandou <b>${mon}</b>${disguise}!` : `${tn(e.side)} mandou <b>${mon}</b>${disguise}!`;
+    case 'illusion-end': return `<b class="log-fx">🎭 A ilusão se desfez: ${esc(isGM() ? nameOf(e.was) : (e.wasName || '?'))} de ${tn(e.side)} era ${mon}!</b>`;
+    case 'transform': return `<b class="log-fx">🔄 ${whose} se transformou em ${esc(isGM() ? nameOf(e.target) : (e.targetName || '?'))}!</b>`;
+    case 'transform-end': return `${whose} voltou à forma normal.`;
     case 'hp': {
       const dir = e.delta !== undefined ? Math.sign(e.delta) : Math.sign(e.pct || 0);
       const amount = e.delta !== undefined ? `${Math.abs(e.delta)} HP (${e.hp}/${e.max})` : `${Math.abs(e.pct)}% do HP`;
@@ -3824,7 +3936,19 @@ function renderArena(b) {
   const v = battleView(b), names = battleTrainers(b);
   const ctl = v.control && b.status === 'active';   // an ended battle is a record: no HP/stage/switch controls
   const onField = side => (side.full ? side.active : side.activeView);
-  const infoOf = (side, m) => m && (side.full ? fieldInfo(m, battleTera(b, side.key, m.id)) : fieldInfoFromView(m));
+  const infoOf = (side, m) => {
+    if (!m) return null;
+    if (!side.full) return fieldInfoFromView(m);
+    const f = fieldInfo(m, battleTera(b, side.key, m.id));
+    const as = monById(illusionAs(b, side.key, m.id));
+    if (as) f.illusion = as.nickname || as.species;
+    return f;
+  };
+  // what the sprite shows: a player's own Zoroark looks like its disguise (as in the games); the GM sees the real one
+  const lookOf = (side, m) => {
+    const as = m && side.full && !isGM() ? monById(illusionAs(b, side.key, m.id)) : null;
+    return as ? { ...as, battle: m.battle } : m;
+  };
   const bottom = onField(v.bottom), top = onField(v.top);
   const topInfo = infoOf(v.top, top), bottomInfo = infoOf(v.bottom, bottom);
   // keep the log scrolled to the newest line unless the reader scrolled up
@@ -3859,8 +3983,8 @@ function renderArena(b) {
       <div class="wx-fx" aria-hidden="true"></div>
       <div class="plat plat-foe"></div>
       <div class="plat plat-ally"></div>
-      ${top ? battleSpriteHtml(top, false, 'spr spr-foe' + (topInfo.fainted ? ' fainted' : ''), topInfo.tera, topInfo.dmax) + hpBoxHtml(topInfo, 'foe') : '<div class="scene-empty">Sem Pokémon em campo</div>'}
-      ${bottom ? battleSpriteHtml(bottom, true, 'spr spr-ally' + (bottomInfo.fainted ? ' fainted' : ''), bottomInfo.tera, bottomInfo.dmax) + hpBoxHtml(bottomInfo, 'ally') : ''}
+      ${top ? battleSpriteHtml(lookOf(v.top, top), false, 'spr spr-foe' + (topInfo.fainted ? ' fainted' : ''), topInfo.tera, topInfo.dmax) + hpBoxHtml(topInfo, 'foe') : '<div class="scene-empty">Sem Pokémon em campo</div>'}
+      ${bottom ? battleSpriteHtml(lookOf(v.bottom, bottom), true, 'spr spr-ally' + (bottomInfo.fainted ? ' fainted' : ''), bottomInfo.tera, bottomInfo.dmax) + hpBoxHtml(bottomInfo, 'ally') : ''}
     </div>
     ${sideStripHtml(v.bottom, 'bottom', ctl)}
     <div class="bt-panels">
@@ -3887,7 +4011,11 @@ function battleCardHtml(b) {
   } else meta = `Você é ${esc(b.trainers[b.you].name)}`;
   const mine = !isGM() && !b.spectator;
   return `<div class="bl-card${mine ? ' mine' : ''}">
-    <div class="bl-vs">${avatarHtml(t.a.avatar, t.a.name)}<span>${esc(t.a.name)}</span><span class="bt-vs">VS</span><span>${esc(t.b.name)}</span>${avatarHtml(t.b.avatar, t.b.name)}</div>
+    <div class="bl-vs">
+      <span class="bl-who" data-profile-battle="${esc(b.id)}:a" title="Ver a ficha de ${esc(t.a.name)}">${avatarHtml(t.a.avatar, t.a.name)}<span>${esc(t.a.name)}</span></span>
+      <span class="bt-vs">VS</span>
+      <span class="bl-who" data-profile-battle="${esc(b.id)}:b" title="Ver a ficha de ${esc(t.b.name)}"><span>${esc(t.b.name)}</span>${avatarHtml(t.b.avatar, t.b.name)}</span>
+    </div>
     <div class="bl-meta"><span class="bl-status${b.status === 'ended' ? ' ended' : ''}">${b.status === 'ended' ? esc(winnerText(b)) : 'Em andamento'}</span>${mine ? '<span class="bl-status you">VOCÊ LUTA</span>' : ''} ${meta}</div>
     <div class="bl-actions">
       ${b.spectator
@@ -3949,6 +4077,7 @@ async function createBattle() {
     battleForm = null;
     openBattleId = b.id;
     await refreshState();
+    for (const side of ['a', 'b']) await imposterCheck(side);   // a Ditto leading transforms into the other lead
     schedulePoll();
   } catch (e) { alert(errMsg(e)); }
 }
@@ -3967,7 +4096,7 @@ function switchIn(side, monId) {
   if (!b.revealed[side].includes(monId)) b.revealed[side].push(monId);
   battleMsg[side === 'a' ? 'bottom' : 'top'] = null;
   renderBattle(); renderSidebar();
-  patchBattleRoom({ switch: { side, monId } });
+  patchBattleRoom({ switch: { side, monId } }).then(() => imposterCheck(side));   // a Ditto transforms on entering
 }
 async function deleteBattleRoom(id) {
   if (!confirm('Excluir esta batalha? O HP dos Pokémon continua como está.')) return;
@@ -4003,25 +4132,60 @@ const ART_W = 640, ART_H = 360, ART_SCALE = 2, ART_R = 43;
 const ART_SLOTS = [[234, 54], [123, 54], [49, 126], [49, 231], [123, 306], [234, 306]];
 const ART_BANNER_X = 200;
 
+// Each Pokémon as it finished the battle — or as it was knocked out: faint, and its form then (Tera,
+// Dynamax / Gigantamax, Mega / Battle Bound, transformed). Dynamax and a transformation end when it leaves
+// the field, so a knocked-out one's form comes from faintForm (kept by the server at the knockout).
 function battleArtData(b) {
   const t = battleTrainers(b);
-  // as each one finished the battle: Mega-evolved ones keep the Mega's sprite
-  const pick = m => ({ species: m.species, shiny: !!m.shiny, megaActive: megaFormOf(m), art: artRefOf(m) });
+  const faintForms = isGM() ? (b.faintForm || {}) : ((b.mine && b.mine.faintForm) || {});
+  const pick = (m, side) => {
+    const ff = faintForms[m.id] || {}, bt = m.battle || {}, tr = transformOf(m);
+    return { species: m.species, shiny: !!m.shiny, megaActive: megaFormOf(m) || ff.mega || '', art: artRefOf(m),
+      fainted: curHpOf(m) <= 0, tera: battleTera(b, side, m.id), dmax: bt.dmax || ff.dmax || null,
+      transformSprite: (tr && tr.spriteId) || ff.transformSprite || null };
+  };
   const mon = id => battleMon(b, id);
   if (isGM()) {
-    const side = s => ({ trainer: t[s], mons: b.revealed[s].map(mon).filter(Boolean).map(pick) });
+    const side = s => ({ trainer: t[s], mons: b.revealed[s].map(mon).filter(Boolean).map(m => pick(m, s)) });
     return { a: side('a'), b: side('b'), winner: b.winner };
   }
-  if (b.spectator) {
-    const side = s => ({ trainer: t[s], mons: b.field[s].seen.map(pick) });
+  if (b.spectator) {   // the server's views already carry all of it
+    const side = s => ({ trainer: t[s], mons: b.field[s].seen });
     return { a: side('a'), b: side('b'), winner: b.winner };
   }
   const foe = b.you === 'a' ? 'b' : 'a';
   return {
-    [b.you]: { trainer: t[b.you], mons: b.mine.used.map(mon).filter(Boolean).map(pick) },
-    [foe]: { trainer: t[foe], mons: b.foe.seen.map(pick) },
+    [b.you]: { trainer: t[b.you], mons: b.mine.used.map(mon).filter(Boolean).map(m => pick(m, b.you)) },
+    [foe]: { trainer: t[foe], mons: b.foe.seen },
     winner: b.winner
   };
+}
+// The end-of-battle art's effects on a Pokémon, pixel by pixel on its own canvas:
+// Dynamax / Gigantamax — a red aura `r` pixels wide around it (behind it, where it's transparent)
+function addArtAura(c, r) {
+  const g = c.getContext('2d', { willReadFrequently: true }), w = c.width, h = c.height;
+  const im = g.getImageData(0, 0, w, h), d = im.data, src = new Uint8ClampedArray(d);
+  const solid = (x, y) => x >= 0 && y >= 0 && x < w && y < h && src[(y * w + x) * 4 + 3] >= 128;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4;
+    if (src[i + 3] >= 128) continue;
+    let near = false;
+    for (let dy = -r; dy <= r && !near; dy++) for (let dx = -r; dx <= r && !near; dx++) if (Math.abs(dx) + Math.abs(dy) <= r && solid(x + dx, y + dy)) near = true;
+    if (near) { d[i] = 232; d[i + 1] = 32; d[i + 2] = 60; d[i + 3] = 215; }
+  }
+  g.putImageData(im, 0, 0);
+}
+// knocked out: grey and a little see-through
+function fadeFainted(c) {
+  const g = c.getContext('2d', { willReadFrequently: true });
+  const im = g.getImageData(0, 0, c.width, c.height), d = im.data;
+  for (let i = 0; i < d.length; i += 4) {
+    if (!d[i + 3]) continue;
+    const v = Math.round((0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2]) * 0.85 + 28);
+    d[i] = d[i + 1] = d[i + 2] = v;
+    d[i + 3] = Math.round(d[i + 3] * 0.6);
+  }
+  g.putImageData(im, 0, 0);
 }
 
 function loadArtImage(src) {
@@ -4108,23 +4272,33 @@ async function drawBattleArt(out, data) {
   const overlays = [];   // illustrations, drawn at full resolution once the art is enlarged
   for (const [s, , mirror] of sides) {
     const mons = data[s].mons.slice(0, ART_SLOTS.length);
-    const imgs = await Promise.all(mons.map(m => {
-      const custom = customArtOf(m);
-      if (custom) return loadArtImage(custom.url).then(img => (img ? { custom: true, pixel: custom.pixel, img } : null));
-      const sid = spriteIdOf(m);
-      return loadArtImage(sid ? spriteImg(sid, m.shiny) : null);
+    const imgs = await Promise.all(mons.map(async m => {
+      const custom = m.transformSprite ? null : customArtOf(m);   // transformed: the copied look
+      if (custom) { const img = await loadArtImage(custom.url); return img ? { custom: true, pixel: custom.pixel, img } : null; }
+      const gm = m.dmax === 'gmax' ? gmaxOf(m) : null;   // Gigantamax: its official G-Max sprite
+      const sid = gm ? gm[0] : spriteIdOf(m);
+      if (!sid) return null;
+      if (m.tera) {   // Terastallized: its crystal version, made like in the arena
+        const key = teraSpriteKey(sid, m.shiny, false, m.tera);
+        if (!(teraSpriteCache.get(key) || {}).url) await makeTeraSprite(key, [spriteImg(sid, m.shiny)], m.tera);
+        const made = teraSpriteCache.get(key);
+        if (made && made.url) { const img = await loadArtImage(made.url); if (img) return img; }
+      }
+      return loadArtImage(spriteImg(sid, m.shiny));
     }));
     mons.forEach((m, i) => {
       const [sx, sy] = ART_SLOTS[i];
       const cx = mirror ? ART_W - sx : sx;
       ic.clearRect(0, 0, inner.width, inner.height);
       ic.globalCompositeOperation = 'source-over';
-      if (imgs[i] && imgs[i].custom && !imgs[i].pixel) {
-        // an illustration (not pixel art) goes on top after the 2× enlargement, at the final resolution
-        overlays.push({ x: cx, y: sy, img: imgs[i].img });
+      if (imgs[i] && imgs[i].custom && (!imgs[i].pixel || imgs[i].img.naturalWidth > 96)) {
+        // an illustration, or a picture bigger than a sprite (even pixel art — squeezing it into 96 art pixels
+        // would halve it), goes on top after the 2× enlargement, at the final resolution
+        overlays.push({ x: cx, y: sy, img: imgs[i].img, dmax: !!m.dmax, fainted: !!m.fainted });
+        return;
       } else if (imgs[i] && imgs[i].custom) {
-        // pixel art fills the ball: brought to 96px once (averaged when shrinking; a small one is enlarged
-        // crisp) and drawn 1:1 like the sprites, not mirrored (it may face either way)
+        // small pixel art fills the ball like a sprite: enlarged crisp to 96px and drawn 1:1, not mirrored
+        // (it may face either way)
         const small = document.createElement('canvas');
         small.width = small.height = 96;
         const sc = small.getContext('2d');
@@ -4143,9 +4317,12 @@ async function drawBattleArt(out, data) {
         ic.textAlign = 'center';
         ic.fillText('?', ART_R + 1, ART_R + 16);
       }
+      if (m.dmax && imgs[i]) addArtAura(inner, 2);   // Dynamax / Gigantamax: red aura
       // keep only what is inside the rim
       ic.globalCompositeOperation = 'destination-in';
       ic.drawImage(mask, 0, 0);
+      ic.globalCompositeOperation = 'source-over';
+      if (m.fainted) fadeFainted(inner);   // knocked out: grey and a little see-through
       ctx.drawImage(inner, cx - ART_R, sy - ART_R);
     });
   }
@@ -4202,26 +4379,24 @@ async function drawBattleArt(out, data) {
     return { name: n + '…', size: 8 };
   };
 
-  // trainer portraits (photos get pixelated: shrunk to 32px, then enlarged without smoothing)
+  // trainer portraits: a Pokémon-sprite icon is drawn like the sprites; a picture (the trainer sheet's, in
+  // high resolution, else the uploaded icon) goes on top after the enlargement, smooth, at full resolution
+  const portraits = [];
   for (const [s, bx] of sides) {
     const t = data[s].trainer || { name: '?', avatar: '' };
     const x0 = bx - 32, y0 = 132;
     ctx.fillStyle = '#1c2e22'; ctx.fillRect(x0 - 2, y0 - 2, 68, 68);
     ctx.fillStyle = '#88ae90'; ctx.fillRect(x0, y0, 64, 64);
-    const mon = /^mon:(\d+)$/.exec(t.avatar || '');
-    const img = await loadArtImage(mon ? spriteImg(mon[1]) : (t.avatar && t.avatar.startsWith('data:image/') ? t.avatar : null));
+    const mon = !(t.art && t.art.id) && /^mon:(\d+)$/.exec(t.avatar || '');
+    const picture = t.art && t.art.id ? '/media/' + encodeURIComponent(t.art.id) : (t.avatar && t.avatar.startsWith('data:image/') ? t.avatar : null);
+    const img = await loadArtImage(mon ? spriteImg(mon[1]) : picture);
     if (img && mon) {
       ctx.save();
       ctx.beginPath(); ctx.rect(x0, y0, 64, 64); ctx.clip();   // big sprites stay inside the portrait
       ctx.drawImage(img, x0 - 16, y0 - 18, 96, 96);
       ctx.restore();
     } else if (img) {
-      const small = document.createElement('canvas');
-      small.width = small.height = 32;
-      const sc = small.getContext('2d');
-      sc.imageSmoothingEnabled = true;
-      sc.drawImage(img, 0, 0, 32, 32);
-      ctx.drawImage(small, x0, y0, 64, 64);
+      portraits.push({ x0, y0, img });
     } else {
       const n = t.name || '?';
       let h = 0;
@@ -4256,15 +4431,28 @@ async function drawBattleArt(out, data) {
   // Illustrations (custom pictures that aren't pixel art) would turn into big blocks at 96 art pixels:
   // they go on top here, smooth and at the final resolution, inside the ball's rim (same square as a sprite)
   const k = ART_SCALE;
-  overlays.forEach(({ x, y, img }) => {
-    const ox = (x + 0.5) * k, oy = (y + 0.5) * k;
+  portraits.forEach(({ x0, y0, img }) => {   // the centre square of the picture fills the portrait
+    const side = Math.min(img.naturalWidth, img.naturalHeight);
+    octx.imageSmoothingEnabled = true;
+    octx.imageSmoothingQuality = 'high';
+    octx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, x0 * k, y0 * k, 64 * k, 64 * k);
+  });
+  overlays.forEach(({ x, y, img, dmax, fainted }) => {
+    const ox = (x + 0.5) * k, oy = (y + 0.5) * k, size = 96 * k;
+    // on its own canvas first, for the same Dynamax aura / knocked-out look as the sprites
+    const pic = document.createElement('canvas');
+    pic.width = pic.height = size;
+    const pg = pic.getContext('2d');
+    pg.imageSmoothingEnabled = true;
+    pg.imageSmoothingQuality = 'high';
+    pg.drawImage(img, 0, 0, size, size);
+    if (dmax) addArtAura(pic, 2 * k);
+    if (fainted) fadeFainted(pic);
     octx.save();
     octx.beginPath();
     octx.arc(ox, oy, (ART_R - 2.5) * k, 0, Math.PI * 2);
     octx.clip();
-    octx.imageSmoothingEnabled = true;
-    octx.imageSmoothingQuality = 'high';
-    octx.drawImage(img, ox - 48 * k, oy - 48 * k, 96 * k, 96 * k);
+    octx.drawImage(pic, ox - size / 2, oy - size / 2);
     octx.restore();
   });
 }
@@ -4350,6 +4538,16 @@ function onBattleClick(ev) {
   }
   const fx = ev.target.closest('[data-fx]');
   if (fx) { fieldStep(fx.dataset.fx, fx.dataset.clear ? null : parseInt(fx.dataset.d, 10)); return; }
+  // a trainer's icon: their character sheet, like a profile
+  const prof = ev.target.closest('[data-profile]');
+  if (prof) { const b = openBattle(); if (b) openBattleTrainer(b, prof.dataset.profile); return; }
+  const profB = ev.target.closest('[data-profile-battle]');
+  if (profB) {
+    const [bid, side] = profB.dataset.profileBattle.split(':');
+    const b = allBattles.find(x => x.id === bid);
+    if (b) openBattleTrainer(b, side);
+    return;
+  }
   const sw = ev.target.closest('[data-switch]');
   if (sw && !sw.disabled) { const [side, monId] = sw.dataset.switch.split(':'); switchIn(side, monId); return; }
   const mv = ev.target.closest('[data-move]');
@@ -4379,6 +4577,9 @@ function onBattleClick(ev) {
   else if (act === 'dmax-end') patchBattleRoom({ dmax: { side: el.dataset.side, end: true } });
   else if (act === 'dmax-undo') { if (confirm('Desfazer o Dynamax deste treinador? O HP volta ao normal.')) patchBattleRoom({ dmax: { side: el.dataset.side, clear: true } }); }
   else if (act === 'tera-undo') { if (confirm('Desfazer o Tera deste treinador?')) patchBattleRoom({ tera: { side: el.dataset.side, clear: true } }); }
+  else if (act === 'illusion-end') patchBattleRoom({ illusion: { side: el.dataset.side, clear: true } });
+  else if (act === 'transform') transformIn(el.dataset.side);
+  else if (act === 'transform-undo') patchBattleRoom({ transform: { side: el.dataset.side, clear: true } });
   else if (act === 'mega') battleMega(el.dataset.side, id, true);
   else if (act === 'mega-undo') {
     const cur = ((openBattle() || {}).mega || {})[el.dataset.side];
@@ -4503,8 +4704,9 @@ function renderSidebar() {
       const role = trainer.kind === 'npc' ? '<span class="npc-tag">NPC</span>'
         : trainer.gone ? 'fora da campanha'
         : (trainer.key === currentTrainer ? 'você' : (trainer.kind === 'gm' ? 'Mestre' : 'Jogador')) + (login ? `: ${esc(login)}` : '');
+      const opens = trainer.kind !== 'npc' && !trainer.gone;   // the icon opens their character sheet
       html += `<div class="sb-trainer">
-        ${avatarHtml(trainer.avatar, trainer.name)}
+        ${opens ? `<span data-open-trainer="${esc(trainer.key)}" title="Ver a ficha de ${esc(trainer.name)}">${avatarHtml(trainer.avatar, trainer.name)}</span>` : avatarHtml(trainer.avatar, trainer.name)}
         <div class="sb-tname">${esc(trainer.name)}<small>${role} · ${own.length} ficha${own.length === 1 ? '' : 's'}</small></div>
         <button class="sb-tbtn" id="sbCloseTrainer" title="Fechar">✕</button>
       </div>`;
@@ -4703,7 +4905,9 @@ const ERR_PT = {
   tera_invalido: 'Não dá pra terastalizar agora.',
   dmax_usado: 'Esse treinador já usou o Dynamax nesta batalha (dá pra desfazer no Pokémon que usou).',
   dmax_invalido: 'Só o Pokémon em campo pode usar Dynamax, e só com a batalha em andamento.',
-  campo_invalido: 'Não deu pra mudar o clima/terreno (só com a batalha em andamento).'
+  campo_invalido: 'Não deu pra mudar o clima/terreno (só com a batalha em andamento).',
+  ilusao_invalida: 'Esse Pokémon não está disfarçado agora.',
+  transform_invalido: 'Não deu pra transformar: precisa de um Pokémon em campo do outro lado, com a batalha em andamento.'
 };
 const errMsg = e => ERR_PT[e.message] || ('Erro: ' + e.message);
 
@@ -5145,6 +5349,15 @@ async function init() {
   document.getElementById('bonusPop').addEventListener('click', onBonusPopClick);
 
   document.getElementById('meAvatarBtn').addEventListener('click', () => openTrainerSheet(currentTrainer));
+  // GM: a trainer's icon in the sidebar / on a ficha opens their character sheet
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-open-trainer]');
+    if (el && isGM()) openTrainerSheet(el.dataset.openTrainer);
+  });
+  // the arena's trainer icons are focusable: Enter opens them too
+  document.getElementById('battleArena').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.target.matches('[data-profile]')) e.target.click();
+  });
   document.getElementById('tsCharBtn').addEventListener('click', () => openAvatarModal('me'));
   document.getElementById('tsCloseBtn').addEventListener('click', closeTrainerSheet);
   document.getElementById('tsCancelBtn').addEventListener('click', closeTrainerSheet);

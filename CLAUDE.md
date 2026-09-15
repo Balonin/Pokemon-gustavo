@@ -65,8 +65,11 @@ Os Status são HP, ATK, DEF, SPA, SPD, SPE.
   → pixel art, ampliada nítida (`image-rendering: pixelated`), de qualquer tamanho; o resto é suavizado.
   Não usar tamanho nem só contagem de cores: arte oficial chapada tem poucas cores, e pixel art grande
   existe. O `pixel` dá pra trocar na janela (controle "Pixel art"), inclusive numa imagem já salva. Na arte
-  de fim de batalha, pixel art entra no desenho de 640×360 como os sprites; o resto é pintado **depois**
-  da ampliação 2×, na resolução final (`overlays` em `drawBattleArt`)
+  de fim de batalha só sprites oficiais e pixel art pequena (até 96 px) entram no desenho de 640×360; toda
+  imagem maior (inclusive pixel art) é pintada **depois** da ampliação 2×, suave e na resolução final
+  (`overlays` em `drawBattleArt`). O retrato do treinador também (`portraits`): usa a imagem da ficha do
+  treinador em alta (`art` em `trainerInfo`/`roomTrainers`), senão o avatar de 96 px — nunca mais reduzido
+  a blocos; avatar de sprite de Pokémon continua como sprite
 - **HP em batalha** = Status de HP × 2
 - **Margem de crítico** = 10% do Status (mesmo arredondamento)
 - **Estágios de Status**: cada estágio vale 10% do Status original, limite de ±6.
@@ -112,7 +115,13 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   "Nome, ícone e música" abre a janela de caracterização. Fica em `members.sheet` (JSON, em todos os tokens
   do nome, como o avatar; `cleanTrainerSheet`). Cada um salva a sua (`PUT /api/me/sheet`); o Mestre vê
   (`members[].sheet`) e edita a de qualquer jogador (`PUT /api/members/:nome/sheet`, pelo "📜 Ficha do
-  treinador" da barra lateral). Imagem segue as regras da imagem de ficha e some ao trocar ou na expulsão
+  treinador" da barra lateral). Imagem segue as regras da imagem de ficha e some ao trocar ou na expulsão.
+  **Clicar no ícone de um treinador abre a ficha dele, como um perfil** (faixas da arena, cartões da lista de
+  batalhas; pro Mestre também o topo da barra lateral e o dono da ficha — `data-profile`,
+  `data-profile-battle`, `data-open-trainer`, `openBattleTrainer`). Mestre: a ficha completa e editável (NPC:
+  perfil sem Status). Jogador: a própria, editável; a de outro, **só leitura** (`openTrainerProfile`) com
+  nome, imagem e Status — que vêm em `trainerInfo` (`stats`, `art`). **As anotações nunca saem do servidor
+  pra outro jogador**
 - Cada pessoa recebe um **token** salvo no `localStorage` e enviado no header
   `Authorization: Bearer <token>`
 - **As permissões são aplicadas no servidor**, não no cliente:
@@ -222,6 +231,23 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   pra jogador e espectador). Na arena: faixa acima da cena com −/+/✕ (`fieldBarHtml`), janelinha
   de escolha (`#fieldModal`, `renderFieldModal`) e o efeito na cena (classes `wx-*`/`tr-*`).
   A Neve (Snow) não tira HP, como no Scarlet/Violet; quem tira é o Granizo (Hail)
+- **Illusion (Zoroark, Zoroark de Hisui, Zorua)**: ability `Illusion` (ou "Ilusão"). Ao entrar em campo
+  (criação da batalha ou troca) fica disfarçado do **último Pokémon do time que ainda não desmaiou** (se esse
+  é ele mesmo, sem disfarce): `battle.illusion[side] = { mon, as }`, decidido no servidor
+  (`applyIllusionOnEntry`). Quem não sabe (adversário, espectador) recebe o disfarce: `publicSideView` monta
+  a visão com espécie/nome/nível/tipos do disfarce e HP/estágios/condições reais; o log grava `as` e
+  `logForPlayer` troca o nome. Só **dano de golpe** quebra (`breakIllusion`): HP perdido sem `reason` de fim
+  de turno (−10/−5/−1/Dano); clima, status e as frações (`reason: 'residual'`) não. Mestre também desfaz
+  pelo botão (`PATCH { illusion: { side, clear } }`). Sair de campo sem ser descoberto: o adversário continua
+  lembrando do disfarce (`illusionSeen`); voltando, disfarça de novo. O Mestre vê o real com "🎭 como X"; o
+  dono vê o próprio Zoroark com a cara do disfarce (`mine.illusion`)
+- **Imposter / Transform (Ditto)**: ability `Imposter` transforma **ao entrar** no Pokémon em campo do outro
+  lado (o primeiro que vê). O cliente do Mestre monta a cópia (`transformSnapshot`: aparência — a da Mega,
+  se ativa —, tipos, Status menos HP, ability, golpes, estágios e Tera; **Dynamax não**) e manda
+  `PATCH { transform: { side, snapshot } }` (`cleanTransform`); fica em `battle.transform` da ficha e
+  `transformOf` faz `spriteIdOf`/`battleTypesOf`/`battleAbilityOf`/`battleMovesOf`/`finalStatsFor` usarem a
+  cópia. O adversário vê o nome dele e a aparência copiada (`transformed`, `transformSprite`). Sair de
+  campo desfaz; botões "🔄 Transformar" (Imposter ou golpe Transform) e "Desfazer transformação"
 - **Dano de fim de turno**: no painel de cada Pokémon o Mestre tem botões já calculados
   (`residualRowHtml`): clima (Areia/Granizo 1/16, com imunidade por tipo — Tera incluso — e por
   ability), Queimadura 1/16, Veneno 1/8, Tóxico n/16 (contador `battle.toxN`, zera ao trocar/mudar de
@@ -232,7 +258,12 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   (`drawBattleArt`, no frontend) é desenhada em 640×360 e ampliada 2× sem suavização; os
   Pokémon aparecem na ordem de `revealed` (ordem de entrada em campo), preenchendo o arco de
   pokébolas a partir da ponta de cima (perto do VS): anti-horário na esquerda, horário na direita
-  (`ART_SLOTS`). Na ficha, os Status ficam em duas colunas: HP | SPE, ATK | SPA, DEF | SPD
+  (`ART_SLOTS`). Cada Pokémon aparece como terminou — ou como foi **nocauteado**: nocauteado fica cinza e
+  translúcido (`fadeFainted`), e na forma em que estava: cristal de Tera, Dynamax com aura vermelha
+  (`addArtAura`), Gigantamax com o sprite G-Max + aura, Mega/Battle Bound, transformado. Como o Dynamax e a
+  transformação acabam quando ele sai de campo, o servidor guarda a forma no nocaute em `battle.faintForm`
+  (esquecida se ele for revivido); vai pro jogador em `mine.faintForm` e já resolvida no `seen` público
+  (`tera`, `dmax`, `transformSprite`). Na ficha, os Status ficam em duas colunas: HP | SPE, ATK | SPA, DEF | SPD
 
 ## Armadilha conhecida
 
