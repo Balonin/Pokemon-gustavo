@@ -447,12 +447,18 @@ function hpPct(p) {
   if (!bt.maxHp) return 100;
   return Math.max(1, Math.min(100, Math.round((bt.hp / bt.maxHp) * 100)));
 }
-function fieldView(p) {
+function fieldView(p, tera) {
+  const bt = p.battle || {};
   const stages = {};
-  Object.entries((p.battle || {}).stages || {}).forEach(([k, v]) => { if (v) stages[k] = v; });
-  return { species: p.species, nickname: p.nickname || '', level: p.level, shiny: !!p.shiny,
-    type1: p.type1, type2: p.type2 || '', hpPct: hpPct(p), stages };
+  Object.entries(bt.stages || {}).forEach(([k, v]) => { if (v) stages[k] = v; });
+  return { species: p.species, nickname: p.nickname || '', level: p.level, shiny: !!p.shiny, mega: p.mega || '',
+    type1: p.type1, type2: p.type2 || '', hpPct: hpPct(p), stages,
+    status: STATUS_KEYS.includes(bt.status) ? bt.status : null, confused: !!bt.confused, tera: tera || null,
+    dmax: bt.dmax === 'gmax' || bt.dmax === 'dmax' ? bt.dmax : null };
 }
+const STATUS_KEYS = ['brn', 'par', 'slp', 'psn', 'tox', 'frz'];
+const TERA_TYPES = ['Normal', 'Fogo', 'Água', 'Grama', 'Elétrico', 'Gelo', 'Lutador', 'Venenoso', 'Solo',
+  'Voador', 'Psíquico', 'Inseto', 'Pedra', 'Fantasma', 'Dragão', 'Sombrio', 'Aço', 'Fada', 'Astral'];
 async function trainerInfo(roomId) {
   const info = {};
   uniqueMembers(await store.listMembers(roomId)).forEach(x => { info[x.name] = { name: x.character || x.name, avatar: x.avatar, theme: x.theme || null }; });
@@ -474,12 +480,16 @@ function battleChangeEvents(before, after) {
   const hp1 = (b1.hp === undefined || b1.hp === null) ? hp0 : b1.hp;
   const st0 = b0.stages || {}, st1 = b1.stages || {};
   const changed = STAGE_STATS.filter(k => (st0[k] || 0) !== (st1[k] || 0));
-  // "Restaurar": back to full HP with every stage cleared
-  if (max && hp1 === max && changed.length && !STAGE_STATS.some(k => st1[k])) return [{ k: 'restore' }];
+  const s0 = b0.status || null, s1 = b1.status || null;
+  // "Restaurar": back to full HP with every stage, status and confusion cleared
+  const clean = !STAGE_STATS.some(k => st1[k]) && !s1 && !b1.confused;
+  if (max && hp1 === max && clean && (changed.length || s0 || b0.confused)) return [{ k: 'restore' }];
   const ev = [];
   if (hp0 !== null && hp1 !== hp0) ev.push({ k: 'hp', delta: hp1 - hp0, hp: hp1, max });
   if (hp1 !== null && hp1 <= 0 && (hp0 === null || hp0 > 0)) ev.push({ k: 'faint' });
   changed.forEach(k => ev.push({ k: 'stage', stat: k, delta: (st1[k] || 0) - (st0[k] || 0), now: st1[k] || 0 }));
+  if (s0 !== s1) ev.push({ k: 'status', status: s1, was: s0 });
+  if (!!b0.confused !== !!b1.confused) ev.push({ k: 'confuse', on: !!b1.confused });
   return ev;
 }
 // The log as a player may read it: nothing about the opponent's Pokémon that never showed up,
@@ -493,15 +503,43 @@ function logForPlayer(b, you, byId) {
       const out = { t: e.t, k: e.k };
       if (e.side) out.side = e.side;
       if (e.mon) out.name = nameOf(e.mon);
-      if (e.prev) out.prevName = nameOf(e.prev);
+      if (e.prev && e.k === 'send') out.prevName = nameOf(e.prev);
       if (e.k === 'hp') {
         if (e.side === you) Object.assign(out, { delta: e.delta, hp: e.hp, max: e.max });
         else out.pct = e.max ? Math.max(1, Math.round((Math.abs(e.delta) / e.max) * 100)) * Math.sign(e.delta) : 0;
       }
       if (e.k === 'stage') Object.assign(out, { stat: e.stat, delta: e.delta, now: e.now });
       if (e.k === 'end') out.winner = e.winner;
+      if (e.k === 'status') Object.assign(out, { status: e.status, was: e.was });
+      if (e.k === 'confuse') out.on = e.on;
+      if (e.k === 'tera') out.type = e.type;
+      if (e.k === 'dmax') out.gmax = !!e.gmax;
       return out;
     });
+}
+
+// Dynamax / Gigantamax doubles max and current HP (hp undefined = full stays full); ending it halves them back
+function growDmax(bt, kind) {
+  const out = { ...(bt || {}), dmax: kind };
+  if (out.hp !== undefined && out.hp !== null) out.hp = out.hp * 2;
+  if (out.maxHp) out.maxHp = out.maxHp * 2;
+  return out;
+}
+function shrinkDmax(bt) {
+  const { dmax, ...out } = bt || {};
+  if (out.hp !== undefined && out.hp !== null) out.hp = Math.ceil(out.hp / 2);
+  if (out.maxHp) out.maxHp = Math.round(out.maxHp / 2);
+  return out;
+}
+async function endDmaxOf(monId, roomId) {
+  const p = await store.getPokemon(monId);
+  if (p && p.battle && p.battle.dmax) await setMonBattle(p, roomId, shrinkDmax(p.battle));
+}
+
+// Tera type a side's Pokémon is using in this battle (null if it hasn't terastallized)
+function teraOf(b, side, monId) {
+  const t = (b.tera || {})[side];
+  return t && t.mon === monId ? t.type : null;
 }
 
 function playerBattleView(b, me, roomMons, info) {
@@ -520,14 +558,15 @@ function playerBattleView(b, me, roomMons, info) {
     trainers: { a: info[b.sides.a.owner] || { name: '—', avatar: '' }, b: info[b.sides.b.owner] || { name: '—', avatar: '' } },
     mine: {
       party: b.party[you].filter(id => byId(id)), active: b.active[you], used: b.revealed[you].filter(id => byId(id)),
-      final: final ? Object.fromEntries(b.party[you].filter(id => final[id]).map(id => [id, final[id]])) : null
+      final: final ? Object.fromEntries(b.party[you].filter(id => final[id]).map(id => [id, final[id]])) : null,
+      tera: (b.tera || {})[you] || null
     },
     foe: {
       partySize: foeParty.length,
-      active: foeActive ? fieldView(foeActive) : null,
+      active: foeActive ? fieldView(foeActive, teraOf(b, foe, foeActive.id)) : null,
       // every Pokémon of theirs that has been on the field, in order of appearance
       seen: b.revealed[foe].map(byId).filter(Boolean).map(p => ({
-        species: p.species, nickname: p.nickname || '', level: p.level, shiny: !!p.shiny,
+        species: p.species, nickname: p.nickname || '', level: p.level, shiny: !!p.shiny, mega: p.mega || '',
         fainted: hpPct(p) === 0, active: p.id === b.active[foe]
       }))
     },
@@ -548,7 +587,7 @@ async function isValidOwner(roomId, owner) {
 function cleanMonData(body) {
   const allowed = ['species','nickname','type1','type2','level','natureName','natureUp','natureDown',
     'base100','stage','maxStage','committed','legendary','distributed','ability','notes','moves','shiny',
-    'order','battle'];
+    'order','battle','teraType','mega','megaBase'];
   const out = {};
   allowed.forEach(k => { if (body[k] !== undefined) out[k] = body[k]; });
   out.updatedAt = new Date().toISOString();
@@ -900,7 +939,7 @@ app.post('/api/battles', auth, async (req, res) => {
       name: String(body.name || '').trim().slice(0, 60), status: 'active', sides, party,
       active: { a: party.a[0], b: party.b[0] },
       revealed: { a: [party.a[0]], b: [party.b[0]] },   // everything that has been on the field, in order
-      winner: null, createdAt: new Date().toISOString(), log: []
+      winner: null, tera: { a: null, b: null }, dmax: { a: null, b: null }, createdAt: new Date().toISOString(), log: []
     };
     pushLog(data, { k: 'start' });
     SIDES.forEach(s => pushLog(data, { k: 'send', side: s, mon: party[s][0] }));
@@ -922,10 +961,54 @@ app.patch('/api/battles/:id', auth, async (req, res) => {
       const side = body.switch.side, monId = String(body.switch.monId || '');
       if (!SIDES.includes(side) || !data.party[side].includes(monId)) return res.status(400).json({ error: 'troca_invalida' });
       const prev = data.active[side];
+      const dm = (data.dmax || {})[side];
+      if (prev !== monId && dm && dm.mon === prev && !dm.ended) {
+        await endDmaxOf(prev, roomId);
+        dm.ended = true;
+        pushLog(data, { k: 'dmax-end', side, mon: prev });
+      }
       if (prev !== monId) {
         data.active[side] = monId;
         if (!data.revealed[side].includes(monId)) data.revealed[side].push(monId);
         pushLog(data, { k: 'send', side, mon: monId, prev });
+      }
+    }
+    if (body.dmax) {
+      const side = body.dmax.side;
+      if (!SIDES.includes(side) || data.status !== 'active') return res.status(400).json({ error: 'dmax_invalido' });
+      data.dmax = data.dmax || { a: null, b: null };
+      const cur = data.dmax[side];
+      if (body.dmax.end || body.dmax.clear) {
+        if (!cur) return res.status(400).json({ error: 'dmax_invalido' });
+        if (!cur.ended) await endDmaxOf(cur.mon, roomId);
+        if (body.dmax.clear) { data.dmax[side] = null; pushLog(data, { k: 'dmax-undo', side }); }
+        else if (!cur.ended) { cur.ended = true; pushLog(data, { k: 'dmax-end', side, mon: cur.mon }); }
+      } else {
+        const monId = String(body.dmax.monId || '');
+        if (!data.party[side].includes(monId) || data.active[side] !== monId) return res.status(400).json({ error: 'dmax_invalido' });
+        if (cur) return res.status(400).json({ error: 'dmax_usado' });
+        const gmax = !!body.dmax.gmax;
+        const p = await store.getPokemon(monId);
+        if (p) await setMonBattle(p, roomId, growDmax(p.battle, gmax ? 'gmax' : 'dmax'));
+        data.dmax[side] = { mon: monId, gmax, ended: false };
+        pushLog(data, { k: 'dmax', side, mon: monId, gmax });
+      }
+    }
+    if (body.tera) {
+      const side = body.tera.side;
+      if (!SIDES.includes(side) || data.status !== 'active') return res.status(400).json({ error: 'tera_invalido' });
+      data.tera = data.tera || { a: null, b: null };
+      if (body.tera.clear) {
+        data.tera[side] = null;
+        pushLog(data, { k: 'tera-undo', side });
+      } else {
+        const monId = String(body.tera.monId || '');
+        if (!data.party[side].includes(monId)) return res.status(400).json({ error: 'tera_invalido' });
+        if (data.tera[side]) return res.status(400).json({ error: 'tera_usado' });
+        const p = await store.getPokemon(monId);
+        const type = p && TERA_TYPES.includes(p.teraType) ? p.teraType : (p && p.type1) || 'Normal';
+        data.tera[side] = { mon: monId, type };
+        pushLog(data, { k: 'tera', side, mon: monId, type });
       }
     }
     if (body.status !== undefined) {
@@ -941,7 +1024,7 @@ app.patch('/api/battles/:id', auth, async (req, res) => {
           const p = mons.find(x => x.id === monId);
           if (!p) continue;
           data.final[monId] = p.battle ? JSON.parse(JSON.stringify(p.battle)) : {};
-          if (!busy.has(monId)) await setMonBattle(p, roomId, p.battle && p.battle.maxHp ? { maxHp: p.battle.maxHp } : {});
+          if (!busy.has(monId)) await setMonBattle(p, roomId, {});
         }
         Object.assign(data, { status: 'ended', winner, endedAt: new Date().toISOString() });
         pushLog(data, { k: 'end', winner });

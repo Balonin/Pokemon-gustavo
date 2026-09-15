@@ -34,7 +34,10 @@ Os Status são HP, ATK, DEF, SPA, SPD, SPE.
 - **Nível 40**: o bônus retido só é concedido se o Pokémon já estiver na forma final
   ou se o treinador marcar `committed` (decidiu nunca mais evoluir)
 - **Lendários/Pseudo-lendários**: recebem +15 em vez de +10 no total
-- **Teto**: nenhum Status passa de **90**
+- **Teto**: nenhum Status passa de **90** — exceto o **HP, que não tem teto**
+- **Mega / Battle Bound** (`mega` na ficha): depois da distribuição, **+10% em cada Status**
+  (inclusive HP), com o arredondamento do crítico (`roundStatus`), e o teto vira **95** (HP segue
+  sem teto). Ex.: 90 → 90 + 9 = 99 → 95; 85 → 85 + 8 = 93. Tudo em `finalStatsFor`
 - **HP em batalha** = Status de HP × 2
 - **Margem de crítico** = 10% do Status (mesmo arredondamento)
 - **Estágios de Status**: cada estágio vale 10% do Status original, limite de ±6.
@@ -98,9 +101,38 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   estão em outra batalha em andamento. A batalha encerrada é exibida a partir de `final`
   (`battleMon` no cliente; `playerBattleView` no servidor; o jogador recebe `mine.final`) e fica
   sem controles. Reabrir devolve às fichas o estado de `final`
+- **Terastalizar**: a ficha guarda `teraType` (um dos 18 tipos ou `Astral`; vazio = o 1º tipo),
+  escolhido na janelinha do botão "Tera" embaixo da arte. Na batalha, o Mestre ativa com
+  `PATCH /api/battles/:id { tera: { side, monId } }` — **um por lado por batalha** (como nos
+  jogos), desfazível com `{ tera: { side, clear: true } }`; fica em `battle.tera[side] = { mon, type }`.
+  Enquanto terastalizado o Pokémon defende só com o tipo Tera (`defTypes`; Astral mantém os tipos).
+  O tipo Tera do adversário **só vai pro jogador depois de usado**
+  Visual: não existem sprites 2D de Tera, então `makeTeraSprite` gera um (tinge o sprite com a cor
+  do tipo, facetas de cristal, contorno escuro e uma joia pixelada na cabeça) e guarda em cache
+- **Dynamax / Gigantamax**: dobra o HP (máximo e atual) e o dano dos golpes (`1dX×2`); os golpes
+  aparecem como golpes Max do tipo (`MAX_MOVE`), Max Guard nos de status, e no Gigantamax o do tipo
+  exclusivo vira o G-Max (tabela `GMAX`: sprite oficial do PokeAPI + golpe). Mestre ativa com
+  `PATCH /api/battles/:id { dmax: { side, monId, gmax } }` (só o Pokémon em campo, **um por lado por
+  batalha**), encerra com `{ end: true }` (HP volta pela metade, arredondando pra cima) ou desfaz com
+  `{ clear: true }`; trocar o Pokémon também encerra. O estado fica em `battle.dmax` da ficha
+  (`'dmax'`/`'gmax'`, que faz `maxHpOf` dobrar) e em `battle.dmax[side]` da batalha. Pode junto com o
+  Tera (e com a Mega, quando existir). Visual: Gigantamax usa o sprite oficial com aura vermelha;
+  Dynamax comum fica 28% maior com aura vermelha
+- **Mega Evolução / Battle Bound**: botão com o símbolo da Mega no topo da ficha (todos os Pokémon).
+  `mega` = `''`, o nome de uma Mega oficial (`'Mega Charizard X'`) ou `'bb'` (Battle Bound: a Mega do
+  RPG, com golpe e passiva de assinatura criados à mão nos campos que já existem — não puxa nada).
+  Mega oficial (tabela `MEGA`, 97 formas do PokeAPI) troca **tipos, ability e sprite**; `megaBase`
+  guarda o que volta ao desligar. 9 Megas novas não têm ability no PokeAPI (mantém a do Pokémon) e
+  a Mega Zygarde não tem sprite. `spriteIdOf(m)` é quem decide o sprite (Mega → id da forma). O
+  adversário vê a Mega (`fieldView.mega`). Pode junto com Tera e Dynamax
+- **Condições de status**: `battle.status` na ficha (`brn`, `par`, `slp`, `psn`, `tox`, `frz`) e
+  `battle.confused` (acumula). Só o Mestre altera (é o mesmo `battle` do HP), aparecem pro
+  adversário e no log, e somem no "Restaurar" e na cura de fim de batalha
 - **Fim de batalha**: o Mestre escolhe o vencedor (`winner`: `a`, `b` ou `draw`). A arte de resumo
   (`drawBattleArt`, no frontend) é desenhada em 640×360 e ampliada 2× sem suavização; os
-  Pokémon aparecem na ordem de `revealed` (ordem de entrada em campo)
+  Pokémon aparecem na ordem de `revealed` (ordem de entrada em campo), preenchendo o arco de
+  pokébolas a partir da ponta de cima (perto do VS): anti-horário na esquerda, horário na direita
+  (`ART_SLOTS`). Na ficha, os Status ficam em duas colunas: HP | SPE, ATK | SPA, DEF | SPD
 
 ## Armadilha conhecida
 
