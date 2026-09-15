@@ -1855,7 +1855,7 @@ function renderSheet() {
       <div class="header-edit-row">
         <div><label>Espécie</label><input id="hf_species" list="speciesList" value="${draft.species || ''}" placeholder="ex: Chikorita"></div>
         <div><label>Apelido</label><input id="hf_nickname" value="${draft.nickname || ''}" placeholder="opcional"></div>
-        <div style="max-width:80px;"><label>Nível</label><input id="hf_level" type="number" min="1" max="100" value="${draft.level}"></div>
+        <div style="max-width:80px;"><label>Nível</label><input id="hf_level" type="text" inputmode="numeric" maxlength="3" autocomplete="off" value="${draft.level}" title="1 a 100 (↑/↓ somam 1)"></div>
       </div>
       <div id="dexHint" class="header-sub"></div>
       <div id="evoBoxHeader"></div>
@@ -1870,7 +1870,36 @@ function renderSheet() {
 
     document.getElementById('hf_species').addEventListener('input', (e) => { applySpeciesToDraft(e.target.value); renderSheet(); document.getElementById('hf_species').focus(); document.getElementById('hf_species').selectionStart = document.getElementById('hf_species').value.length; });
     document.getElementById('hf_nickname').addEventListener('input', (e) => { draft.nickname = e.target.value; document.getElementById('headerRegion').querySelector('#hf_nickname').value = draft.nickname; });
-    document.getElementById('hf_level').addEventListener('input', (e) => { draft.level = parseInt(e.target.value)||1; renderSheet(); document.getElementById('hf_level').focus(); });
+    // Level: while typing, an empty box (or a 0) is left alone — snapping it to 1 made it impossible to
+    // erase and type another number; valid levels update the sheet at once (above 100 becomes 100).
+    // A text box (digits only) instead of type="number": the sheet is redrawn on every digit, and only a
+    // text box lets the caret go back where it was (a number box put it at the start: "2" then "5" → "52").
+    const setLevel = (level, caret) => {
+      draft.level = level;
+      renderSheet();
+      const box = document.getElementById('hf_level');
+      box.focus();
+      const at = Math.min(caret, box.value.length);
+      box.setSelectionRange(at, at);
+    };
+    const lvl = document.getElementById('hf_level');
+    lvl.addEventListener('input', (e) => {
+      const box = e.target;
+      const digits = box.value.replace(/\D/g, '');
+      if (digits !== box.value) box.value = digits;
+      const n = parseInt(digits, 10);
+      if (!(n >= 1)) return;
+      const level = Math.min(100, n);
+      if (level === draft.level && String(level) === digits) return;
+      setLevel(level, level === n ? box.selectionStart : 3);
+    });
+    lvl.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      e.preventDefault();
+      setLevel(Math.max(1, Math.min(100, draft.level + (e.key === 'ArrowUp' ? 1 : -1))), 3);
+    });
+    // leaving it empty puts the level back (only the box's text: re-rendering here would eat the click on "Concluído")
+    lvl.addEventListener('change', (e) => { if (!(parseInt(e.target.value, 10) >= 1)) e.target.value = draft.level; });
     document.getElementById('hf_done').addEventListener('click', () => setEditing(null));
   } else {
     headerEl.innerHTML = `
