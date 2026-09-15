@@ -99,6 +99,25 @@ if (DATABASE_URL) {
       const x = r.rows[0];
       return { id: x.id, name: x.name, gmName: x.gm_name, gmToken: x.gm_token };
     },
+    async renameRoom(id, name) { await pool.query('UPDATE rooms SET name = $2 WHERE id = $1', [id, name]); },
+    // everything in the campaign goes with it; explicit deletes (in one transaction) instead of trusting
+    // ON DELETE CASCADE, in case an old database has a table without it
+    async deleteRoom(id) {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        for (const t of ['battles', 'pokemon', 'teams', 'npcs', 'media', 'members']) {
+          await client.query(`DELETE FROM ${t} WHERE room_id = $1`, [id]);
+        }
+        await client.query('DELETE FROM rooms WHERE id = $1', [id]);
+        await client.query('COMMIT');
+      } catch (e) {
+        await client.query('ROLLBACK');
+        throw e;
+      } finally {
+        client.release();
+      }
+    },
     async addMember(m) {
       await pool.query(
         'INSERT INTO members (token, room_id, name, role, avatar, theme, char_name) VALUES ($1,$2,$3,$4,$5,$6,$7)',
@@ -223,6 +242,13 @@ if (DATABASE_URL) {
   store = {
     async createRoom(room) { mem.rooms[room.id] = room; },
     async getRoom(id) { return mem.rooms[id] || null; },
+    async renameRoom(id, name) { if (mem.rooms[id]) mem.rooms[id].name = name; },
+    async deleteRoom(id) {
+      ['battles', 'pokemon', 'teams', 'npcs', 'media', 'members'].forEach(t => {
+        Object.entries(mem[t]).forEach(([k, x]) => { if (x.roomId === id) delete mem[t][k]; });
+      });
+      delete mem.rooms[id];
+    },
     async addMember(m) { mem.members[m.token] = { avatar: '', theme: null, character: '', ...m }; },
     async getMember(token) { return mem.members[token] || null; },
     async listMembers(roomId) {
@@ -502,21 +528,23 @@ function battleChangeEvents(before, after) {
   return ev;
 }
 // The log as a player may read it: nothing about the opponent's Pokémon that never showed up,
-// and the opponent's HP changes only as a percentage of the bar.
+// and the opponent's HP changes only as a percentage of the bar. A spectator (`you` = null)
+// reads both sides that way.
 function logForPlayer(b, you, byId) {
-  const foe = otherSide(you);
   const nameOf = id => { const p = byId(id); return p ? (p.nickname || p.species) : '?'; };
   return (b.log || [])
-    .filter(e => e.side !== foe || !e.mon || b.revealed[foe].includes(e.mon))
+    .filter(e => !e.side || e.side === you || !e.mon || b.revealed[e.side].includes(e.mon))
     .map(e => {
       const out = { t: e.t, k: e.k };
       if (e.side) out.side = e.side;
       if (e.mon) out.name = nameOf(e.mon);
       if (e.prev && e.k === 'send') out.prevName = nameOf(e.prev);
       if (e.k === 'hp') {
-        if (e.side === you) Object.assign(out, { delta: e.delta, hp: e.hp, max: e.max });
+        if (you && e.side === you) Object.assign(out, { delta: e.delta, hp: e.hp, max: e.max });
         else out.pct = e.max ? Math.max(1, Math.round((Math.abs(e.delta) / e.max) * 100)) * Math.sign(e.delta) : 0;
+        if (e.why) out.why = e.why;
       }
+      if (/^(weather|terrain)(-end)?$/.test(e.k)) out.kind = e.kind;
       if (e.k === 'stage') Object.assign(out, { stat: e.stat, delta: e.delta, now: e.now });
       if (e.k === 'end') out.winner = e.winner;
       if (e.k === 'status') Object.assign(out, { status: e.status, was: e.was });
@@ -546,41 +574,89 @@ async function endDmaxOf(monId, roomId) {
   if (p && p.battle && p.battle.dmax) await setMonBattle(p, roomId, shrinkDmax(p.battle));
 }
 
+/* Weather and terrain: one of each per battle, public to everyone who sees it. `turns` null = no
+   limit (the primal weathers). The GM counts the turns down by hand; reaching 0 ends it.
+   The names, effects and look live in the frontend (WEATHER / TERRAIN). */
+const WEATHER_KINDS = ['sun', 'rain', 'sand', 'hail', 'snow', 'harshsun', 'heavyrain', 'winds'];
+const TERRAIN_KINDS = ['electric', 'grassy', 'misty', 'psychic'];
+const FIELD_TURNS_MAX = 99;
+// body: { kind, turns } starts one (replacing the current), { delta } moves the turn count, { clear: true } ends it
+function applyFieldEffect(data, key, kinds, body) {
+  const cur = data[key] || null;
+  const end = () => { if (cur) pushLog(data, { k: key + '-end', kind: cur.kind }); data[key] = null; };
+  if (body.clear) { end(); return true; }
+  if (body.delta !== undefined) {
+    const d = parseInt(body.delta, 10);
+    if (!cur || cur.turns === null || !d) return false;
+    const turns = Math.min(FIELD_TURNS_MAX, cur.turns + d);
+    if (turns <= 0) end(); else data[key] = { ...cur, turns };
+    return true;
+  }
+  if (!kinds.includes(body.kind)) return false;
+  const turns = body.turns === null ? null : Math.max(1, Math.min(FIELD_TURNS_MAX, parseInt(body.turns, 10) || 5));
+  data[key] = { kind: body.kind, turns };
+  pushLog(data, { k: key, kind: body.kind });
+  return true;
+}
+// why an HP change happened, when it's end-of-turn damage/healing (goes to the log)
+const RESIDUAL_REASONS = ['sand', 'hail', 'brn', 'psn', 'tox', 'grassy'];
+
 // Tera type a side's Pokémon is using in this battle (null if it hasn't terastallized)
 function teraOf(b, side, monId) {
   const t = (b.tera || {})[side];
   return t && t.mon === monId ? t.type : null;
 }
 
-function playerBattleView(b, me, roomMons, info) {
-  const you = b.sides.a.owner === me ? 'a' : 'b';
-  const foe = otherSide(you);
-  // an ended battle shows how it finished, not the (already healed) current HP
+// The battle's Pokémon by id; an ended battle shows how it finished, not the (already healed) current HP
+function battleMonLookup(b, roomMons) {
   const final = b.status === 'ended' && b.final ? b.final : null;
-  const byId = id => {
+  return id => {
     const p = roomMons.find(x => x.id === id);
     return p && final && final[id] ? { ...p, battle: final[id] } : p;
   };
-  const foeParty = b.party[foe].map(byId).filter(Boolean);
-  const foeActive = byId(b.active[foe]);
+}
+// A side as someone who doesn't fight on it sees it: the Pokémon on the field, the party size and
+// the ones already used. Moves, Status, ability and exact HP stay on the server.
+function publicSideView(b, s, byId) {
+  const active = byId(b.active[s]);
   return {
-    id: b.id, name: b.name, status: b.status, winner: b.winner || null, createdAt: b.createdAt, endedAt: b.endedAt, you,
-    trainers: { a: info[b.sides.a.owner] || { name: '—', avatar: '' }, b: info[b.sides.b.owner] || { name: '—', avatar: '' } },
+    partySize: b.party[s].map(byId).filter(Boolean).length,
+    active: active ? fieldView(active, teraOf(b, s, active.id)) : null,
+    // every Pokémon of theirs that has been on the field, in order of appearance
+    seen: b.revealed[s].map(byId).filter(Boolean).map(p => ({
+      species: p.species, nickname: p.nickname || '', level: p.level, shiny: !!p.shiny, megaActive: megaActiveOf(p),
+      fainted: hpPct(p) === 0, active: p.id === b.active[s]
+    }))
+  };
+}
+function battleHeader(b, info) {
+  return { id: b.id, name: b.name, status: b.status, winner: b.winner || null, createdAt: b.createdAt, endedAt: b.endedAt,
+    weather: b.weather || null, terrain: b.terrain || null,
+    trainers: { a: info[b.sides.a.owner] || { name: '—', avatar: '' }, b: info[b.sides.b.owner] || { name: '—', avatar: '' } } };
+}
+
+function playerBattleView(b, me, roomMons, info) {
+  const you = b.sides.a.owner === me ? 'a' : 'b';
+  const final = b.status === 'ended' && b.final ? b.final : null;
+  const byId = battleMonLookup(b, roomMons);
+  return {
+    ...battleHeader(b, info), you,
     mine: {
       party: b.party[you].filter(id => byId(id)), active: b.active[you], used: b.revealed[you].filter(id => byId(id)),
       final: final ? Object.fromEntries(b.party[you].filter(id => final[id]).map(id => [id, final[id]])) : null,
       tera: (b.tera || {})[you] || null, mega: (b.mega || {})[you] || null
     },
-    foe: {
-      partySize: foeParty.length,
-      active: foeActive ? fieldView(foeActive, teraOf(b, foe, foeActive.id)) : null,
-      // every Pokémon of theirs that has been on the field, in order of appearance
-      seen: b.revealed[foe].map(byId).filter(Boolean).map(p => ({
-        species: p.species, nickname: p.nickname || '', level: p.level, shiny: !!p.shiny, megaActive: megaActiveOf(p),
-        fainted: hpPct(p) === 0, active: p.id === b.active[foe]
-      }))
-    },
+    foe: publicSideView(b, otherSide(you), byId),
     log: logForPlayer(b, you, byId)
+  };
+}
+// A player watching a battle they don't fight in: both sides as an opponent would see them.
+function spectatorBattleView(b, roomMons, info) {
+  const byId = battleMonLookup(b, roomMons);
+  return {
+    ...battleHeader(b, info), spectator: true,
+    field: { a: publicSideView(b, 'a', byId), b: publicSideView(b, 'b', byId) },
+    log: logForPlayer(b, null, byId)
   };
 }
 
@@ -662,6 +738,34 @@ app.post('/api/rooms/:id/join', async (req, res) => {
   }
 });
 
+/* The GM renames the campaign, or deletes it with everything in it: fichas, teams, NPCs, battles,
+   uploaded music and everyone's access. Deleting asks for the campaign's name back (`confirm`),
+   so a stray request can't wipe it. */
+app.put('/api/room', auth, async (req, res) => {
+  try {
+    if (!isGM(req.member)) return res.status(403).json({ error: 'so_mestre' });
+    const name = String(req.body.name || '').trim().slice(0, 80);
+    if (!name) return res.status(400).json({ error: 'nome_campanha_obrigatorio' });
+    await store.renameRoom(req.member.roomId, name);
+    res.json({ ok: true, name });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'erro_interno' });
+  }
+});
+
+app.delete('/api/room', auth, async (req, res) => {
+  try {
+    if (!isGM(req.member)) return res.status(403).json({ error: 'so_mestre' });
+    const room = await store.getRoom(req.member.roomId);
+    if (!room) return res.status(404).json({ error: 'sala_nao_encontrada' });
+    if (String((req.body || {}).confirm || '').trim() !== room.name.trim()) return res.status(400).json({ error: 'confirmacao_invalida' });
+    await store.deleteRoom(room.id);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'erro_interno' });
+  }
+});
+
 app.get('/api/state', auth, async (req, res) => {
   try {
     const m = req.member;
@@ -674,10 +778,11 @@ app.get('/api/state', auth, async (req, res) => {
     if (!isGM(m)) {
       pokemon = pokemon.filter(p => p.owner === m.name);
       teams = teams.filter(t => t.owner === m.name);
-      // players only get the battles they fight in, filtered down to what they may see
-      const mine = battles.filter(b => SIDES.some(s => b.sides[s].owner === m.name));
-      const info = mine.length ? await trainerInfo(m.roomId) : {};
-      battles = mine.map(b => playerBattleView(b, m.name, roomMons, info));
+      // players get every battle of the room, filtered down to what they may see: the ones they
+      // fight in with their own side in full, the others as a spectator
+      const info = battles.length ? await trainerInfo(m.roomId) : {};
+      battles = battles.map(b => (SIDES.some(s => b.sides[s].owner === m.name)
+        ? playerBattleView(b, m.name, roomMons, info) : spectatorBattleView(b, roomMons, info)));
     }
     const members = isGM(m) ? uniqueMembers(await store.listMembers(m.roomId)) : [];
     const npcs = isGM(m) ? await store.listNpcs(m.roomId) : [];
@@ -875,8 +980,9 @@ app.patch('/api/pokemon/:id/battle', auth, async (req, res) => {
     if (req.body.battle !== undefined && !isGM(m)) return res.status(403).json({ error: 'so_mestre' });
     const { id, roomId, owner, ...data } = p;
     if (req.body.battle !== undefined) {
-      // log the change in every running battle this Pokémon is part of
-      const events = battleChangeEvents(p.battle, req.body.battle);
+      // log the change in every running battle this Pokémon is part of (with the reason, for end-of-turn damage)
+      const why = RESIDUAL_REASONS.includes(req.body.reason) ? req.body.reason : null;
+      const events = battleChangeEvents(p.battle, req.body.battle).map(e => (why && e.k === 'hp' ? { ...e, why } : e));
       if (events.length) {
         for (const b of await store.listBattles(m.roomId)) {
           const side = b.status === 'active' && SIDES.find(s => b.party[s].includes(p.id));
@@ -960,7 +1066,8 @@ app.post('/api/battles', auth, async (req, res) => {
       name: String(body.name || '').trim().slice(0, 60), status: 'active', sides, party,
       active: { a: party.a[0], b: party.b[0] },
       revealed: { a: [party.a[0]], b: [party.b[0]] },   // everything that has been on the field, in order
-      winner: null, tera: { a: null, b: null }, dmax: { a: null, b: null }, mega: { a: null, b: null }, createdAt: new Date().toISOString(), log: []
+      winner: null, tera: { a: null, b: null }, dmax: { a: null, b: null }, mega: { a: null, b: null },
+      weather: null, terrain: null, createdAt: new Date().toISOString(), log: []
     };
     pushLog(data, { k: 'start' });
     SIDES.forEach(s => pushLog(data, { k: 'send', side: s, mon: party[s][0] }));
@@ -992,7 +1099,16 @@ app.patch('/api/battles/:id', auth, async (req, res) => {
         data.active[side] = monId;
         if (!data.revealed[side].includes(monId)) data.revealed[side].push(monId);
         pushLog(data, { k: 'send', side, mon: monId, prev });
+        // like the games, the bad poison counter starts over when the Pokémon leaves the field
+        const pp = prev ? await store.getPokemon(prev) : null;
+        if (pp && pp.battle && pp.battle.toxN) { const { toxN, ...bt } = pp.battle; await setMonBattle(pp, roomId, bt); }
       }
+    }
+    for (const key of ['weather', 'terrain']) {
+      const fx = body[key];
+      if (fx === undefined) continue;
+      if (data.status !== 'active' || !fx || typeof fx !== 'object') return res.status(400).json({ error: 'campo_invalido' });
+      if (!applyFieldEffect(data, key, key === 'weather' ? WEATHER_KINDS : TERRAIN_KINDS, fx)) return res.status(400).json({ error: 'campo_invalido' });
     }
     if (body.mega) {
       const side = body.mega.side;

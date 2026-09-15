@@ -7,7 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&family=Press+Start+2P&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
 <style>
 :root {
   --bg: #1b2b3a;
@@ -25,6 +25,8 @@
   --hp-green: #48d048;
   --font-pixel: "Press Start 2P", "Silkscreen", monospace;
   --font-body: "Silkscreen", "Press Start 2P", monospace;
+  /* typing: Silkscreen has no real lowercase (it draws small caps), so what you type would look all caps */
+  --font-input: "Pixelify Sans", "Silkscreen", monospace;
   --u: 3px;
 }
 * { box-sizing: border-box; }
@@ -73,7 +75,7 @@ h3 { font-family: var(--font-pixel); font-size: 0.708rem; margin: 0 0 8px; color
 label { display: block; font-size: 0.802rem; color: var(--ink-soft); margin: 6px 0 4px; font-family: var(--font-pixel); }
 input, select, textarea {
   background: var(--panel-deep); border: 2px solid var(--outline); color: var(--ink);
-  border-radius: 0; padding: 7px 9px; font-size: 0.944rem; font-family: var(--font-body);
+  border-radius: 0; padding: 7px 9px; font-size: 0.944rem; font-family: var(--font-input);
   box-shadow: inset 0 0 0 2px #4a4050;
 }
 input, select { width: 100%; }
@@ -331,6 +333,12 @@ body.in-room { max-width: none; padding: 12px; }
 .bl-meta { font-size: 0.74rem; color: var(--ink-soft); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .bl-status { font-family: var(--font-pixel); font-size: 0.46rem; padding: 3px 6px; border: 2px solid var(--outline); background: #1f4a2a; color: #9be8a8; }
 .bl-status.ended { background: var(--panel-hi); color: var(--ink-soft); }
+.bl-status.you { background: #4a3a10; color: var(--gold); }
+.bl-status.spect { align-self: center; background: #23304a; color: #a8c8f0; }
+.bl-card.mine { --edge: var(--gold); }
+.bl-section { font-family: var(--font-pixel); font-size: 0.6rem; color: var(--ink-soft); margin: 14px 0 8px; }
+.bl-section:first-of-type { margin-top: 0; }
+.bl-section span { color: #fff; }
 .bl-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .bf-cols { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 14px; align-items: start; margin-top: 8px; }
 .bf-vs { align-self: center; }
@@ -538,6 +546,90 @@ body.in-room { max-width: none; padding: 12px; }
 .spr-ph { display: flex; align-items: center; justify-content: center; font-family: var(--font-pixel); font-size: 3rem; color: #384030; }
 .scene-empty { position: absolute; right: 10%; top: 20%; font-family: var(--font-pixel); font-size: 0.62rem; color: #486040; }
 
+/* ----- Weather and terrain ----- */
+.bt-field { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.fx-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 5px 4px 8px; border: 2px solid var(--outline); background: color-mix(in srgb, var(--c) 30%, var(--panel-deep)); box-shadow: inset 0 -3px 0 var(--c); font-family: var(--font-pixel); font-size: 0.5rem; color: #fff; text-shadow: 1px 1px 0 var(--outline); }
+.fx-ic { font-size: 0.95rem; line-height: 1; text-shadow: none; }
+.fx-turns { min-width: 66px; text-align: center; color: var(--gold); }
+.fx-b { width: 24px; height: 24px; padding: 0; border: 2px solid var(--outline); background: var(--panel-hi); color: var(--ink); cursor: pointer; font-family: var(--font-pixel); font-size: 0.6rem; }
+.fx-b:hover { background: var(--red); color: #fff; }
+.fx-b.fx-x { margin-left: 2px; }
+.fx-open { margin-left: auto; }
+.field-modal { max-width: 640px; }
+.fx-dur { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 12px 0 2px; font-size: 0.8rem; }
+.fx-dur b { min-width: 30px; text-align: center; font-family: var(--font-pixel); font-size: 0.7rem; color: var(--gold); }
+.fx-inf { display: inline-flex; align-items: center; gap: 6px; margin: 0 0 0 8px; cursor: pointer; white-space: nowrap; font-size: 0.8rem; }
+.fx-inf input[type="checkbox"] { width: 16px; height: 16px; min-width: 0; padding: 0; margin: 0; flex: none; accent-color: var(--gold); cursor: pointer; }
+.fx-sec { margin: 14px 0 6px; font-family: var(--font-pixel); font-size: 0.56rem; color: var(--ink-soft); }
+.fx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 6px; }
+.fx-opt { display: flex; align-items: center; gap: 8px; padding: 8px 9px; text-align: left; cursor: pointer; color: var(--ink); border: 2px solid var(--outline); background: var(--panel-deep); box-shadow: inset 4px 0 0 var(--c); }
+.fx-opt:hover { background: var(--panel-hi); }
+.fx-opt.on { background: color-mix(in srgb, var(--c) 38%, var(--panel-deep)); box-shadow: inset 0 0 0 2px #fff; }
+.fx-ol { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.fx-ol b { font-family: var(--font-pixel); font-size: 0.52rem; font-weight: normal; color: #fff; }
+.fx-ol small { font-size: 0.66rem; color: var(--ink-soft); }
+.fx-on { font-family: var(--font-pixel); font-size: 0.42rem; color: var(--gold); }
+.fx-desc { margin-top: 12px; font-size: 0.74rem; line-height: 1.5; color: var(--ink-soft); }
+.fx-desc b { font-weight: normal; color: #fff; }
+.log-line .log-fx { color: #9ed0f0; }
+/* end-of-turn damage row */
+.bt-res .res-btn { font-size: 0.52rem; padding: 6px 7px; }
+.res-sep { width: 2px; align-self: stretch; margin: 0 2px; background: var(--panel-hi); }
+/* In the scene: the weather over everything but the HP boxes, the terrain tinting the ground and platforms.
+   Particles are small pixel tiles (SVG with crisp edges) scrolled by the animation. */
+.wx-fx { position: absolute; inset: 0; z-index: 1; pointer-events: none; display: none; }
+.bt-scene[class*=" wx-"] .wx-fx { display: block; }
+.wx-sun .wx-fx, .wx-harshsun .wx-fx {
+  background: radial-gradient(circle at 90% -6%, rgba(255, 244, 176, 0.85) 0 9%, rgba(255, 214, 96, 0.45) 9% 19%, rgba(255, 190, 70, 0.2) 19% 34%, transparent 34%),
+    linear-gradient(rgba(255, 176, 60, 0.2), rgba(255, 150, 40, 0.1));
+}
+.wx-harshsun .wx-fx { filter: saturate(1.6) hue-rotate(-12deg); background-color: rgba(255, 110, 30, 0.16); }
+.wx-rain .wx-fx, .wx-heavyrain .wx-fx {
+  background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40' shape-rendering='crispEdges'><g fill='%23dcefff' fill-opacity='.8'><rect x='4' y='2' width='2' height='9'/><rect x='24' y='13' width='2' height='9'/><rect x='34' y='27' width='2' height='9'/><rect x='14' y='26' width='2' height='9'/></g></svg>"),
+    linear-gradient(rgba(40, 70, 130, 0.22), rgba(40, 70, 130, 0.22));
+  animation: wx-fall-40 0.55s linear infinite;
+}
+.wx-heavyrain .wx-fx {
+  background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40' shape-rendering='crispEdges'><g fill='%23dcefff' fill-opacity='.85'><rect x='4' y='2' width='2' height='12'/><rect x='24' y='13' width='2' height='12'/><rect x='34' y='27' width='2' height='12'/><rect x='14' y='26' width='2' height='12'/><rect x='30' y='0' width='2' height='10'/><rect x='10' y='14' width='2' height='10'/><rect x='19' y='3' width='2' height='10'/></g></svg>"),
+    linear-gradient(rgba(20, 40, 90, 0.4), rgba(20, 40, 90, 0.4));
+  animation-duration: 0.4s;
+}
+.wx-sand .wx-fx {
+  background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='36' height='24' shape-rendering='crispEdges'><g fill='%23f0d898' fill-opacity='.85'><rect x='2' y='3' width='6' height='2'/><rect x='20' y='10' width='4' height='2'/><rect x='10' y='18' width='6' height='2'/><rect x='29' y='20' width='3' height='2'/></g></svg>"),
+    linear-gradient(rgba(196, 150, 70, 0.34), rgba(170, 120, 50, 0.3));
+  animation: wx-sand 0.7s linear infinite;
+}
+.wx-hail .wx-fx {
+  background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' shape-rendering='crispEdges'><g fill='%23f4fbff' stroke='%2378a8c8' stroke-width='1'><rect x='6.5' y='4.5' width='4' height='4'/><rect x='30.5' y='18.5' width='4' height='4'/><rect x='18.5' y='34.5' width='4' height='4'/><rect x='40.5' y='40.5' width='3' height='3'/></g></svg>"),
+    linear-gradient(rgba(150, 190, 220, 0.25), rgba(150, 190, 220, 0.25));
+  animation: wx-fall-48 0.9s linear infinite;
+}
+.wx-snow .wx-fx {
+  background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' shape-rendering='crispEdges'><g fill='%23ffffff'><rect x='6' y='4' width='3' height='3'/><rect x='30' y='16' width='2' height='2'/><rect x='18' y='32' width='3' height='3'/><rect x='41' y='38' width='2' height='2'/><rect x='12' y='20' width='2' height='2'/></g></svg>"),
+    linear-gradient(rgba(220, 236, 255, 0.28), rgba(220, 236, 255, 0.28));
+  animation: wx-drift 4s linear infinite;
+}
+.wx-winds .wx-fx {
+  background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='80' height='30' shape-rendering='crispEdges'><g fill='%23ffffff' fill-opacity='.6'><rect x='4' y='6' width='34' height='1'/><rect x='44' y='20' width='24' height='1'/></g></svg>"),
+    linear-gradient(rgba(120, 160, 150, 0.16), rgba(120, 160, 150, 0.16));
+  animation: wx-wind 0.6s linear infinite;
+}
+@keyframes wx-fall-40 { to { background-position: 0 160px, 0 0; } }
+@keyframes wx-fall-48 { to { background-position: 0 192px, 0 0; } }
+@keyframes wx-drift { to { background-position: 48px 96px, 0 0; } }
+@keyframes wx-sand { to { background-position: 144px 24px, 0 0; } }
+@keyframes wx-wind { to { background-position: -160px 0, 0 0; } }
+@media (prefers-reduced-motion: reduce) { .wx-fx { animation: none !important; } }
+.bt-scene[class*=" tr-"]::before { content: ''; position: absolute; left: 0; right: 0; top: 26%; bottom: 0; pointer-events: none; background: color-mix(in srgb, var(--trc) 32%, transparent); }
+.tr-electric { --trc: #f8d830; }
+.tr-grassy { --trc: #3c9c3c; }
+.tr-misty { --trc: #f4a8d8; }
+.tr-psychic { --trc: #c060d0; }
+.tr-electric .plat { background: #f0d840; box-shadow: inset 0 -6px 0 #c8a020, inset 0 5px 0 #fff4a0; }
+.tr-grassy .plat { background: #50a838; box-shadow: inset 0 -6px 0 #3a8428, inset 0 5px 0 #88d460; }
+.tr-misty .plat { background: #f0b8dc; box-shadow: inset 0 -6px 0 #d088b8, inset 0 5px 0 #fde0f0; }
+.tr-psychic .plat { background: #c880d8; box-shadow: inset 0 -6px 0 #9850b0, inset 0 5px 0 #eab8f0; }
+
 .hpbox {
   position: absolute; width: 42%; padding: 9px 13px 8px;
   background: #f8f8d8; color: #383030; border: 3px solid #383030;
@@ -666,6 +758,17 @@ body.in-room { max-width: none; padding: 12px; }
   .rail-title { width: 100%; text-align: left; margin-top: 4px; }
 }
 .sb-add + .sb-add { margin-top: 6px; }
+.room-edit-btn { width: 30px; height: 30px; padding: 0; border: 2px solid var(--outline); background: var(--panel-hi); color: var(--ink); cursor: pointer; font-size: 0.95rem; line-height: 1; }
+.room-edit-btn:hover { border-color: var(--gold); color: var(--gold); }
+.room-edit-btn[hidden] { display: none; }
+.rm-row { display: flex; gap: 8px; align-items: center; }
+.rm-row input { flex: 1; min-width: 0; }
+.rm-danger { margin-top: 18px; padding: 12px; border: 2px solid #8a2a2a; background: #2a1618; display: flex; flex-direction: column; gap: 8px; }
+.rm-danger-t { font-family: var(--font-pixel); font-size: 0.6rem; color: #f08070; }
+.rm-danger p { margin: 0; font-size: 0.78rem; line-height: 1.5; color: var(--ink-soft); }
+.rm-danger b { color: #fff; font-weight: normal; }
+.rm-danger .btn { align-self: flex-start; }
+.rm-danger .btn:disabled { --edge: #5a4048; color: #8a7a80; cursor: not-allowed; transform: none; }
 .me-avatar-btn { background: none; border: none; padding: 0; cursor: pointer; display: inline-flex; }
 .me-avatar-btn .av { --av: 30px; }
 .me-avatar-btn:hover .av { border-color: var(--gold); }
@@ -724,12 +827,13 @@ body.in-room { max-width: none; padding: 12px; }
   <div class="ws-topbar">
     <div class="ws-title">
       <span id="wsRoomName">Sala</span>
+      <button class="room-edit-btn" id="roomEditBtn" title="Campanha: mudar o nome ou excluir" hidden>⚙</button>
       <span class="role-badge" id="wsRoleBadge">JOGADOR</span>
       <button class="me-avatar-btn" id="meAvatarBtn" title="Trocar sua caracterização"></button>
     </div>
     <div class="ws-actions">
       <button class="btn secondary small" id="inviteBtn">🔗 Convidar</button>
-      <button class="btn secondary small" id="battleBtn">⚔ Batalha</button>
+      <button class="btn secondary small" id="battleBtn">⚔ Batalhas</button>
       <button class="btn secondary small" id="teamsBtn">👥 Times</button>
       <button class="btn secondary small" id="leaveRoomBtn">Sair</button>
     </div>
@@ -879,6 +983,51 @@ body.in-room { max-width: none; padding: 12px; }
   </div>
 </div>
 
+<!-- ===== CAMPAIGN SETTINGS (GM): rename / delete ===== -->
+<div class="modal-backdrop" id="roomModal" hidden>
+  <div class="card modal" role="dialog" aria-modal="true" aria-labelledby="rmTitle">
+    <h2 id="rmTitle">Campanha</h2>
+    <label for="rmName">Nome da campanha</label>
+    <div class="rm-row">
+      <input id="rmName" maxlength="80" autocomplete="off">
+      <button class="btn small" id="rmSaveBtn">Salvar</button>
+    </div>
+    <div class="rm-danger">
+      <div class="rm-danger-t">Excluir campanha</div>
+      <p>Apaga <b>pra sempre</b> todas as fichas, times, NPCs, batalhas e músicas enviadas desta campanha, e todo mundo perde o acesso. Não dá pra desfazer.</p>
+      <label for="rmConfirm">Pra confirmar, digite o nome da campanha: <b id="rmConfirmName"></b></label>
+      <input id="rmConfirm" autocomplete="off">
+      <button class="btn danger small" id="rmDeleteBtn" disabled>Excluir campanha</button>
+    </div>
+    <div class="top-actions" style="margin:14px 0 0;">
+      <button class="btn secondary small" id="rmCloseBtn">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== WEATHER / TERRAIN PICKER (GM, in battle) ===== -->
+<div class="modal-backdrop" id="fieldModal" hidden>
+  <div class="card modal field-modal" role="dialog" aria-modal="true" aria-labelledby="fxTitle">
+    <h2 id="fxTitle">Clima e terreno</h2>
+    <div class="fx-dur">
+      <span>Duração ao ativar</span>
+      <button class="mini-btn" data-fxd="-1" title="Menos um turno">−</button>
+      <b id="fxDur">5</b>
+      <button class="mini-btn" data-fxd="1" title="Mais um turno">+</button>
+      <span>turnos</span>
+      <label class="fx-inf"><input type="checkbox" id="fxInf"> sem limite</label>
+    </div>
+    <div class="fx-sec">Clima</div>
+    <div class="fx-grid" id="fxWeather"></div>
+    <div class="fx-sec">Terreno</div>
+    <div class="fx-grid" id="fxTerrain"></div>
+    <div class="fx-desc" id="fxDesc"></div>
+    <div class="top-actions" style="margin:12px 0 0;">
+      <button class="btn small" id="fxClose">Fechar</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="battleToast" role="status" hidden>
   <span id="battleToastText"></span>
   <button class="btn small" id="battleToastGo">Entrar</button>
@@ -957,6 +1106,50 @@ const STATUS = {
   frz: { label: 'Congelado', log: 'congelado', short: 'CGL', color: '#43a8d2' }
 };
 const CONFUSED_COLOR = '#cc4f8a';
+
+// ----- Weather and terrain (one of each per battle; the GM counts the turns down) -----
+// dmg: fraction of max HP it takes at the end of the turn (1/dmg), except from the `immune` types and
+// abilities. inf: no turn limit (primal weathers last while their Pokémon is on the field).
+const WEATHER = {
+  sun: { label: 'Sol forte', en: 'Harsh Sunlight', short: 'Sol', icon: '☀️', color: '#e8902c',
+    desc: 'Golpes de Fogo ×1,5 e de Água ×0,5. Ninguém fica Congelado; Solar Beam não precisa carregar.',
+    start: 'O sol ficou forte!', end: 'O sol voltou ao normal.' },
+  rain: { label: 'Chuva', en: 'Rain', short: 'Chuva', icon: '🌧️', color: '#4a7fd0',
+    desc: 'Golpes de Água ×1,5 e de Fogo ×0,5. Thunder e Hurricane sempre acertam.',
+    start: 'Começou a chover!', end: 'A chuva parou.' },
+  sand: { label: 'Tempestade de areia', en: 'Sandstorm', short: 'Areia', icon: '🏜️', color: '#b8924a', dmg: 16,
+    immune: ['Pedra', 'Solo', 'Aço'], immuneAb: ['Sand Veil', 'Sand Rush', 'Sand Force'],
+    desc: 'Tira 1/16 do HP por turno de quem não é Pedra, Solo ou Aço. Pedra ganha +50% de SPD.',
+    start: 'Começou uma tempestade de areia!', end: 'A tempestade de areia passou.' },
+  hail: { label: 'Granizo', en: 'Hail', short: 'Granizo', icon: '🌨️', color: '#78b8d8', dmg: 16,
+    immune: ['Gelo'], immuneAb: ['Ice Body', 'Snow Cloak'],
+    desc: 'Tira 1/16 do HP por turno de quem não é Gelo. Blizzard sempre acerta.',
+    start: 'Começou a cair granizo!', end: 'O granizo parou.' },
+  snow: { label: 'Neve', en: 'Snow', short: 'Neve', icon: '❄️', color: '#9cc8e8',
+    desc: 'Tipo Gelo ganha +50% de DEF e Blizzard sempre acerta. Não tira HP (como no Scarlet/Violet).',
+    start: 'Começou a nevar!', end: 'Parou de nevar.' },
+  harshsun: { label: 'Sol extremo', en: 'Extremely Harsh Sunlight', short: 'Sol extremo', icon: '🔥', color: '#d8501c', inf: true,
+    desc: 'Como o Sol forte, e golpes de Água falham. Dura enquanto quem causou estiver em campo (Desolate Land).',
+    start: 'O sol ficou extremamente forte!', end: 'O sol extremo enfraqueceu.' },
+  heavyrain: { label: 'Chuva torrencial', en: 'Heavy Rain', short: 'Torrencial', icon: '⛈️', color: '#2c58a8', inf: true,
+    desc: 'Como a Chuva, e golpes de Fogo falham. Dura enquanto quem causou estiver em campo (Primordial Sea).',
+    start: 'Começou uma chuva torrencial!', end: 'A chuva torrencial parou.' },
+  winds: { label: 'Ventos fortes', en: 'Strong Winds', short: 'Ventos', icon: '🌀', color: '#6a9a8a', inf: true,
+    desc: 'Golpes super efetivos contra Voador passam a ser normais. Dura enquanto quem causou estiver em campo (Delta Stream).',
+    start: 'Começaram ventos fortes misteriosos!', end: 'Os ventos fortes pararam.' }
+};
+// "no chão" = not Flying and without Levitate (Air Balloon, Magnet Rise etc. are up to the GM)
+const TERRAIN = {
+  electric: { label: 'Campo Elétrico', en: 'Electric Terrain', icon: '⚡', color: '#e8c020',
+    desc: 'Pokémon no chão: golpes Elétricos ×1,3 e ninguém adormece.' },
+  grassy: { label: 'Campo de Grama', en: 'Grassy Terrain', icon: '🌿', color: '#48a848', heal: 16,
+    desc: 'Pokémon no chão recuperam 1/16 do HP por turno e golpes de Grama ×1,3. Earthquake, Bulldoze e Magnitude ×0,5.' },
+  misty: { label: 'Campo de Névoa', en: 'Misty Terrain', icon: '🌫️', color: '#e088c0',
+    desc: 'Pokémon no chão não pegam condições de status nem confusão; golpes de Dragão contra eles ×0,5.' },
+  psychic: { label: 'Campo Psíquico', en: 'Psychic Terrain', icon: '🔮', color: '#c050a0',
+    desc: 'Pokémon no chão: golpes Psíquicos ×1,3 e ficam imunes a golpes com prioridade.' }
+};
+const FIELD_TURNS_MAX = 99;
 
 // ----- Dynamax / Gigantamax: double HP, doubled move damage, Max Moves -----
 const DMAX_COLOR = '#e0203c';
@@ -1158,6 +1351,10 @@ function saveSessionLocal(sess) {
   const all = loadSessions().filter(s => !(s.roomId === sess.roomId));
   all.unshift(sess);
   localStorage.setItem('gustavo_sessions', JSON.stringify(all.slice(0, 8)));
+}
+// a room that's gone (deleted campaign, dead token) leaves the recent list; the others stay
+function forgetSession(roomId) {
+  localStorage.setItem('gustavo_sessions', JSON.stringify(loadSessions().filter(s => s.roomId !== roomId)));
 }
 function randomCode(n) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -2035,24 +2232,34 @@ function effectiveStat(m, k) {
   return Math.max(1, base + step * st);
 }
 
-async function patchBattle(monId, patch) {
+// extra: sent along but not part of the ficha (the reason of an HP change, for the log)
+async function patchBattle(monId, patch, extra) {
   const mon = allMons.find(x => x.id === monId);
   if (!mon) return;
   Object.assign(mon, patch);          // otimista: atualiza local na hora
   renderBattle(); renderSidebar();
-  try { await API.call('PATCH', '/pokemon/' + encodeURIComponent(monId) + '/battle', patch); }
+  try { await API.call('PATCH', '/pokemon/' + encodeURIComponent(monId) + '/battle', { ...patch, ...extra }); }
   catch (e) { alert(errMsg(e)); await refreshState(); renderBattle(); }
 }
 
-function changeHp(monId, delta) {
+// reason: end-of-turn damage/healing ('sand', 'hail', 'brn', 'psn', 'tox', 'grassy'), shown in the log
+function changeHp(monId, delta, reason) {
   const m = allMons.find(x => x.id === monId);
   if (!m) return;
   const max = maxHpOf(m);
   const next = Math.max(0, Math.min(max, curHpOf(m) + delta));
   // maxHp goes along so the server can show the opponent only a percentage of the bar
   const battle = { ...(m.battle || {}), hp: next, maxHp: max };
-  patchBattle(monId, { battle });
+  if (reason === 'tox') battle.toxN = Math.min(15, (battle.toxN || 1) + 1);   // bad poison hurts more every turn
+  patchBattle(monId, { battle }, reason ? { reason } : undefined);
 }
+// End-of-turn damage/healing is a fraction of the max HP — the one before Dynamax, like the games —
+// rounded down, at least 1.
+function residualOf(m, den, num) {
+  const base = maxHpOf(m) / (m.battle && m.battle.dmax ? 2 : 1);
+  return Math.max(1, Math.floor((base * (num || 1)) / den));
+}
+function isGrounded(m, types) { return !types.includes('Voador') && battleAbilityOf(m) !== 'Levitate'; }
 function setStage(monId, k, delta) {
   const m = allMons.find(x => x.id === monId);
   if (!m) return;
@@ -2069,7 +2276,8 @@ function setBattleFlags(monId, change) {
   patchBattle(monId, { battle });
 }
 function setStatus(monId, s) {
-  setBattleFlags(monId, bt => { if (bt.status === s) delete bt.status; else bt.status = s; });   // same button again = cure
+  // same button again = cure; a new status starts the bad poison counter over
+  setBattleFlags(monId, bt => { if (bt.status === s) delete bt.status; else bt.status = s; delete bt.toxN; });
 }
 // "Restaurar": full HP, stages/status cleared; a running Dynamax or Mega stays on
 function restoredBattle(m) {
@@ -2136,12 +2344,15 @@ function battleView(b) {
     };
     return { control: true, bottom: side('a'), top: side('b') };
   }
+  // a spectator fights on neither side: both come as an opponent sees them (side A below, B on top)
+  const pub = (s, f) => ({ key: s, full: false, trainer: b.trainers[s], partySize: f.partySize, activeView: f.active, usedViews: f.seen.filter(v => !v.active) });
+  if (b.spectator) return { control: false, spectator: true, bottom: pub('a', b.field.a), top: pub('b', b.field.b) };
   const foe = b.you === 'a' ? 'b' : 'a';
   const party = b.mine.party.map(id => battleMon(b, id)).filter(Boolean);
   return {
     control: false,
     bottom: { key: b.you, full: true, trainer: b.trainers[b.you], party, active: party.find(m => m.id === b.mine.active) || party[0] || null, used: new Set() },
-    top: { key: foe, full: false, trainer: b.trainers[foe], partySize: b.foe.partySize, activeView: b.foe.active, usedViews: b.foe.seen.filter(v => !v.active) }
+    top: pub(foe, b.foe)
   };
 }
 
@@ -2322,6 +2533,35 @@ function sideStripHtml(side, pos, control) {
   </div>`;
 }
 
+// GM: end-of-turn damage/healing already worked out from the max HP. The ones that apply right now
+// (weather, status, Grassy Terrain) first, then plain fractions for anything else (Leech Seed, Curse…).
+// types: the ones it defends with (Tera included), for the weather immunities.
+function residualRowHtml(m, b, types) {
+  const id = esc(m.id), bt = m.battle || {};
+  const btn = (label, amount, why, title, heal) =>
+    `<button class="mini-btn res-btn${heal ? ' heal' : ''}" data-act="residual" data-id="${id}" data-v="${heal ? amount : -amount}"${why ? ` data-why="${why}"` : ''} title="${esc(title)}">${esc(label)} ${heal ? '+' : '−'}${amount}</button>`;
+  const now = [];
+  const wx = b.weather && WEATHER[b.weather.kind];
+  if (wx && wx.dmg) {
+    const ab = battleAbilityOf(m);
+    const immune = types.find(t => wx.immune.includes(t)) || (['Magic Guard', 'Overcoat', ...wx.immuneAb].includes(ab) ? ab : '');
+    now.push(immune
+      ? `<button class="mini-btn res-btn" disabled title="${esc(wx.label)} não afeta ${esc(m.nickname || m.species)} (${esc(immune)})">${esc(wx.short)}: imune</button>`
+      : btn(wx.short, residualOf(m, wx.dmg), b.weather.kind, `${wx.label}: 1/${wx.dmg} do HP no fim do turno`));
+  }
+  if (bt.status === 'brn') now.push(btn('Queimadura', residualOf(m, 16), 'brn', 'Queimadura: 1/16 do HP no fim do turno'));
+  if (bt.status === 'psn') now.push(btn('Veneno', residualOf(m, 8), 'psn', 'Veneno: 1/8 do HP no fim do turno'));
+  if (bt.status === 'tox') {
+    const n = bt.toxN || 1;
+    now.push(btn(`Tóxico ${n}/16`, residualOf(m, 16, n), 'tox', `Envenenamento grave: ${n}/16 do HP neste turno, e ${Math.min(15, n + 1)}/16 no próximo (volta a 1/16 quando sai de campo)`));
+  }
+  const tr = b.terrain && TERRAIN[b.terrain.kind];
+  if (tr && tr.heal && isGrounded(m, types)) now.push(btn('Grama', residualOf(m, tr.heal), b.terrain.kind, `${tr.label}: recupera 1/${tr.heal} do HP no fim do turno`, true));
+  const frac = [16, 8, 4, 2].map(n => btn(`1/${n}`, residualOf(m, n), '', `Tirar 1/${n} do HP máximo${n === 8 ? ' (ex.: Leech Seed, Bind, Stealth Rock neutro)' : n === 4 ? ' (ex.: Curse, Nightmare)' : ''}`)).join('')
+    + [16, 2].map(n => btn(`1/${n}`, residualOf(m, n), '', `Recuperar 1/${n} do HP máximo${n === 16 ? ' (ex.: Leftovers)' : ' (ex.: Recover, Roost)'}`, true)).join('');
+  return `<div class="bt-dmg bt-res"><span class="bt-status-l" title="Dano e cura de fim de turno, já calculados pelo HP máximo">Fim de turno</span>${now.join('')}${now.length ? '<span class="res-sep"></span>' : ''}${frac}</div>`;
+}
+
 function movePanelHtml(pos, m, control, heading, showChart, ctx) {
   if (!m) return `<div class="bt-panel empty">Nenhum Pokémon em campo.</div>`;
   const name = esc(m.nickname || m.species);
@@ -2420,6 +2660,7 @@ function movePanelHtml(pos, m, control, heading, showChart, ctx) {
       <button class="mini-btn" data-act="dmg-custom" data-id="${id}">Dano</button>
       <button class="mini-btn heal" data-act="heal-custom" data-id="${id}">Cura</button>
     </div>` : ''}
+    ${control && ctx ? residualRowHtml(m, ctx.b, [d1, d2].filter(Boolean)) : ''}
     ${statusRow}
     <div class="bt-stages">${stages}</div>
     ${showChart ? matchupHtml(d1, d2, `Fraquezas de ${m.nickname || m.species}${tera ? ' (Tera ' + tera + ')' : ''}`) : ''}
@@ -2438,6 +2679,7 @@ function renderBattle() {
   const b = openBattle();
   if (openBattleId && !b) openBattleId = null;
   if (b) renderArena(b); else renderBattleList();
+  renderFieldModal();
   syncBattleMusic();
 }
 
@@ -2633,6 +2875,8 @@ function renderMusicBar() {
 }
 
 // ----- Battle log (entries come from the server; a player's copy is already filtered) -----
+const RESIDUAL_LOG = { sand: 'foi atingido pela tempestade de areia', hail: 'foi atingido pelo granizo', brn: 'sofreu com a queimadura',
+  psn: 'sofreu com o veneno', tox: 'sofreu com o veneno', grassy: 'foi curado pelo Campo de Grama' };
 function logText(b, e) {
   const t = battleTrainers(b);
   const tn = s => `<b>${esc((t[s] || {}).name || '—')}</b>`;
@@ -2646,8 +2890,13 @@ function logText(b, e) {
     case 'hp': {
       const dir = e.delta !== undefined ? Math.sign(e.delta) : Math.sign(e.pct || 0);
       const amount = e.delta !== undefined ? `${Math.abs(e.delta)} HP (${e.hp}/${e.max})` : `${Math.abs(e.pct)}% do HP`;
-      return `${whose} ${dir < 0 ? 'perdeu' : 'recuperou'} ${amount}.`;
+      const why = RESIDUAL_LOG[e.why];
+      return why ? `${whose} ${why}: ${dir < 0 ? 'perdeu' : 'recuperou'} ${amount}.` : `${whose} ${dir < 0 ? 'perdeu' : 'recuperou'} ${amount}.`;
     }
+    case 'weather': return `<b class="log-fx">${(WEATHER[e.kind] || {}).icon || ''} ${esc((WEATHER[e.kind] || {}).start || 'O clima mudou.')}</b>`;
+    case 'weather-end': return esc((WEATHER[e.kind] || {}).end || 'O clima voltou ao normal.');
+    case 'terrain': return `<b class="log-fx">${(TERRAIN[e.kind] || {}).icon || ''} ${esc(TERRAIN[e.kind] ? `Um ${TERRAIN[e.kind].label} cobriu a arena!` : 'O terreno mudou.')}</b>`;
+    case 'terrain-end': return esc(TERRAIN[e.kind] ? `O ${TERRAIN[e.kind].label} sumiu.` : 'O terreno voltou ao normal.');
     case 'faint': return `<b class="log-faint">${whose} desmaiou!</b>`;
     case 'stage': return `${STAT_LABEL[e.stat]} de ${whose} ${e.delta > 0 ? 'subiu' : 'caiu'} ${Math.abs(e.delta)} (agora ${e.now > 0 ? '+' : ''}${e.now}).`;
     case 'restore': return `${whose} foi restaurado (HP cheio e estágios zerados).`;
@@ -2693,30 +2942,111 @@ let endingBattle = false;   // GM: choosing the winner
 
 // For a player, where the opponent's moves would be: the types and weaknesses of the Pokémon
 // they are facing (types are public once it's on the field; moves and stats stay hidden).
-function foePanelHtml(side) {
+// A spectator gets this panel for both sides.
+function foePanelHtml(side, spectator) {
   const f = side.activeView;
-  const hidden = `<div class="bp-note">Os golpes e os Status de ${esc(side.trainer.name)} ficam escondidos — como nos jogos, você só vê o que entra em campo.</div>`;
+  const hidden = spectator
+    ? `<div class="bp-note">Você está assistindo: os golpes, os Status e o HP exato de ${esc(side.trainer.name)} ficam escondidos — só aparece o que entra em campo.</div>`
+    : `<div class="bp-note">Os golpes e os Status de ${esc(side.trainer.name)} ficam escondidos — como nos jogos, você só vê o que entra em campo.</div>`;
   if (!f) return `<div class="bt-panel empty">${hidden}</div>`;
   const name = f.nickname || f.species;
   const types = [f.type1, f.type2].filter(Boolean)
     .map(t => `<span class="badge" style="background:${TYPE_COLORS[t] || 'var(--panel-hi)'};color:#fff;">${esc(t)}</span>`).join('')
     + (f.tera ? `<span class="cond tera" style="--c:${TERA_COLORS[f.tera] || '#5fb8c8'}">◆ TERA ${esc(f.tera)}</span>` : '');
   return `<div class="bt-panel">
-    <div class="bp-head">Adversário · <span>${esc(name)}</span></div>
+    <div class="bp-head">${spectator ? esc(side.trainer.name) : 'Adversário'} · <span>${esc(name)}</span></div>
     <div class="bp-types">${types}</div>
     ${(([d1, d2]) => matchupHtml(d1, d2, `Fraquezas de ${name}${f.tera ? ' (Tera ' + f.tera + ')' : ''}`))(defTypes(f.type1, f.type2, f.tera))}
     ${hidden}
   </div>`;
 }
 
+// Weather and terrain above the scene, for everyone; the GM also gets −/+ on the turns, ✕ and the picker.
+function fieldBarHtml(b, ctl) {
+  const chip = (key, table, cur) => {
+    const d = table[cur.kind];
+    if (!d) return '';
+    const counted = cur.turns !== null && cur.turns !== undefined;
+    const turns = counted ? `${cur.turns} turno${cur.turns === 1 ? '' : 's'}` : 'sem limite';
+    return `<div class="fx-chip" style="--c:${d.color}" title="${esc(d.en)} — ${esc(d.desc)}">
+      <span class="fx-ic" aria-hidden="true">${d.icon}</span><span class="fx-name">${esc(d.label)}</span>
+      ${ctl && counted ? `<button class="fx-b" data-fx="${key}" data-d="-1" title="${cur.turns === 1 ? 'Era o último turno: encerra' : 'Menos um turno'}">−</button>` : ''}
+      <span class="fx-turns">${turns}</span>
+      ${ctl && counted ? `<button class="fx-b" data-fx="${key}" data-d="1" title="Mais um turno">+</button>` : ''}
+      ${ctl ? `<button class="fx-b fx-x" data-fx="${key}" data-clear="1" title="Encerrar agora">✕</button>` : ''}
+    </div>`;
+  };
+  const chips = (b.weather ? chip('weather', WEATHER, b.weather) : '') + (b.terrain ? chip('terrain', TERRAIN, b.terrain) : '');
+  if (!chips && !ctl) return '';
+  return `<div class="bt-field">${chips || '<span class="bench-empty">Sem clima nem terreno</span>'}
+    ${ctl ? '<button class="mini-btn fx-open" data-bt="field">🌦 Clima / Terreno</button>' : ''}</div>`;
+}
+// GM: −/+ on a chip (reaching 0 ends it, like the games) or ✕. Shown at once; the server keeps the count.
+function fieldStep(key, delta) {
+  const b = openBattle();
+  if (!b || !b[key]) return;
+  if (delta === null) b[key] = null;
+  else {
+    const turns = Math.min(FIELD_TURNS_MAX, b[key].turns + delta);
+    b[key] = turns <= 0 ? null : { ...b[key], turns };
+  }
+  renderBattle();
+  patchBattleRoom({ [key]: delta === null ? { clear: true } : { delta } });
+}
+
+// ----- The weather/terrain picker (GM) -----
+let fieldDuration = 5;
+function openFieldModal() {
+  document.getElementById('fieldModal').hidden = false;
+  renderFieldModal();
+}
+function closeFieldModal() { document.getElementById('fieldModal').hidden = true; }
+function renderFieldModal() {
+  if (document.getElementById('fieldModal').hidden) return;
+  const b = battleMode ? openBattle() : null;
+  if (!b || !isGM() || b.status !== 'active') { closeFieldModal(); return; }
+  document.getElementById('fxDur').textContent = fieldDuration;
+  const inf = document.getElementById('fxInf').checked;
+  document.querySelectorAll('#fieldModal [data-fxd]').forEach(el => { el.disabled = inf; });
+  const opts = (key, table) => Object.entries(table).map(([k, d]) => {
+    const on = b[key] && b[key].kind === k;
+    return `<button class="fx-opt${on ? ' on' : ''}" style="--c:${d.color}" data-fx-pick="${key}" data-kind="${k}" title="${esc(d.desc)}">
+      <span class="fx-ic" aria-hidden="true">${d.icon}</span>
+      <span class="fx-ol"><b>${esc(d.label)}</b><small>${esc(d.en)}${d.inf ? ' · sem limite' : ''}</small></span>
+      ${on ? '<span class="fx-on">ATIVO</span>' : ''}
+    </button>`;
+  }).join('');
+  document.getElementById('fxWeather').innerHTML = opts('weather', WEATHER);
+  document.getElementById('fxTerrain').innerHTML = opts('terrain', TERRAIN);
+  const cur = [b.weather && WEATHER[b.weather.kind], b.terrain && TERRAIN[b.terrain.kind]].filter(Boolean);
+  document.getElementById('fxDesc').innerHTML = cur.length
+    ? cur.map(d => `<div><b>${d.icon} ${esc(d.label)}:</b> ${esc(d.desc)}</div>`).join('')
+    : 'Escolha um clima e/ou um terreno. Clicar no que está ativo tira ele.';
+}
+function onFieldModalClick(ev) {
+  if (ev.target.id === 'fieldModal' || ev.target.closest('#fxClose')) { closeFieldModal(); return; }
+  const step = ev.target.closest('[data-fxd]');
+  if (step) { fieldDuration = Math.max(1, Math.min(FIELD_TURNS_MAX, fieldDuration + parseInt(step.dataset.fxd, 10))); renderFieldModal(); return; }
+  const pick = ev.target.closest('[data-fx-pick]');
+  const b = openBattle();
+  if (!pick || !b) return;
+  const key = pick.dataset.fxPick, kind = pick.dataset.kind;
+  const def = (key === 'weather' ? WEATHER : TERRAIN)[kind];
+  if (b[key] && b[key].kind === kind) { fieldStep(key, null); renderFieldModal(); return; }   // the active one again = take it off
+  const turns = def.inf || document.getElementById('fxInf').checked ? null : fieldDuration;
+  b[key] = { kind, turns };
+  renderBattle(); renderFieldModal();
+  patchBattleRoom({ [key]: { kind, turns } }).then(renderFieldModal);
+}
+
 function renderArena(b) {
   const root = document.getElementById('battleArena');
   const v = battleView(b), names = battleTrainers(b);
   const ctl = v.control && b.status === 'active';   // an ended battle is a record: no HP/stage/switch controls
-  const bottom = v.bottom.active;
-  const top = v.top.full ? v.top.active : v.top.activeView;
-  const topInfo = top && (v.top.full ? fieldInfo(top, battleTera(b, v.top.key, top.id)) : fieldInfoFromView(top));
-  const bottomInfo = bottom && fieldInfo(bottom, battleTera(b, v.bottom.key, bottom.id));
+  const onField = side => (side.full ? side.active : side.activeView);
+  const infoOf = (side, m) => m && (side.full ? fieldInfo(m, battleTera(b, side.key, m.id)) : fieldInfoFromView(m));
+  const bottom = onField(v.bottom), top = onField(v.top);
+  const topInfo = infoOf(v.top, top), bottomInfo = infoOf(v.bottom, bottom);
   // keep the log scrolled to the newest line unless the reader scrolled up
   const oldLog = document.getElementById('battleLog');
   const stickLog = !oldLog || oldLog.scrollTop + oldLog.clientHeight >= oldLog.scrollHeight - 8;
@@ -2730,6 +3060,7 @@ function renderArena(b) {
       <button class="mini-btn" data-bt="win" data-w="draw">Empate</button>
       <button class="mini-btn" data-bt="end-cancel">Cancelar</button>`;
   } else {
+    if (v.spectator) tools += '<span class="bl-status spect" title="Você não luta nesta batalha: vê só o que entra em campo">👁 ESPECTADOR</span>';
     if (b.status === 'ended') tools += `<button class="mini-btn art-btn" data-bt="art">🏆 Arte da batalha</button>`;
     if (v.control) tools += `
       ${b.status === 'ended' ? '' : '<button class="mini-btn" data-bt="restore">Restaurar times</button>'}
@@ -2743,7 +3074,9 @@ function renderArena(b) {
       <div class="bt-tools">${tools}</div>
     </div>
     ${sideStripHtml(v.top, 'top', ctl)}
-    <div class="bt-scene">
+    ${fieldBarHtml(b, ctl)}
+    <div class="bt-scene${b.weather && WEATHER[b.weather.kind] ? ' wx-' + b.weather.kind : ''}${b.terrain && TERRAIN[b.terrain.kind] ? ' tr-' + b.terrain.kind : ''}">
+      <div class="wx-fx" aria-hidden="true"></div>
       <div class="plat plat-foe"></div>
       <div class="plat plat-ally"></div>
       ${top ? battleSpriteHtml(top, false, 'spr spr-foe' + (topInfo.fainted ? ' fainted' : ''), topInfo.tera, topInfo.dmax) + hpBoxHtml(topInfo, 'foe') : '<div class="scene-empty">Sem Pokémon em campo</div>'}
@@ -2751,37 +3084,51 @@ function renderArena(b) {
     </div>
     ${sideStripHtml(v.bottom, 'bottom', ctl)}
     <div class="bt-panels">
-      ${movePanelHtml('bottom', bottom, ctl, v.control ? v.bottom.trainer.name : 'Seu Pokémon', v.control, { b, side: v.bottom.key })}
-      ${v.top.full ? movePanelHtml('top', top, ctl, v.top.trainer.name, v.control, { b, side: v.top.key }) : foePanelHtml(v.top)}
+      ${v.bottom.full ? movePanelHtml('bottom', bottom, ctl, v.control ? v.bottom.trainer.name : 'Seu Pokémon', v.control, { b, side: v.bottom.key }) : foePanelHtml(v.bottom, v.spectator)}
+      ${v.top.full ? movePanelHtml('top', top, ctl, v.top.trainer.name, v.control, { b, side: v.top.key }) : foePanelHtml(v.top, v.spectator)}
     </div>
     ${battleLogHtml(b)}`;
   const log = document.getElementById('battleLog');
   log.scrollTop = stickLog ? log.scrollHeight : oldScroll;
 }
 
+// Every battle of the room, for everyone: a player enters the ones they fight in and watches the rest.
+function battleCardHtml(b) {
+  const t = battleTrainers(b);
+  const standingText = (a, na, bb, nb) => `${a}/${na} × ${bb}/${nb} de pé`;
+  let meta;
+  if (isGM()) {
+    const standing = s => b.party[s].map(id => battleMon(b, id)).filter(m => m && curHpOf(m) > 0).length;
+    meta = standingText(standing('a'), b.party.a.length, standing('b'), b.party.b.length);
+  } else if (b.spectator) {
+    // only what is public: the party size and who has fainted on the field
+    const standing = f => f.partySize - f.seen.filter(v => v.fainted).length;
+    meta = standingText(standing(b.field.a), b.field.a.partySize, standing(b.field.b), b.field.b.partySize);
+  } else meta = `Você é ${esc(b.trainers[b.you].name)}`;
+  const mine = !isGM() && !b.spectator;
+  return `<div class="bl-card${mine ? ' mine' : ''}">
+    <div class="bl-vs">${avatarHtml(t.a.avatar, t.a.name)}<span>${esc(t.a.name)}</span><span class="bt-vs">VS</span><span>${esc(t.b.name)}</span>${avatarHtml(t.b.avatar, t.b.name)}</div>
+    <div class="bl-meta"><span class="bl-status${b.status === 'ended' ? ' ended' : ''}">${b.status === 'ended' ? esc(winnerText(b)) : 'Em andamento'}</span>${mine ? '<span class="bl-status you">VOCÊ LUTA</span>' : ''} ${meta}</div>
+    <div class="bl-actions">
+      ${b.spectator
+        ? `<button class="btn secondary small" data-bt="open" data-id="${esc(b.id)}" title="Você vê só o que entra em campo, sem golpes nem HP em número">👁 Assistir</button>`
+        : `<button class="btn small" data-bt="open" data-id="${esc(b.id)}">${mine && b.status !== 'ended' ? 'Entrar' : 'Abrir'}</button>`}
+      ${isGM() ? `<button class="btn danger small" data-bt="delete" data-id="${esc(b.id)}">Excluir</button>` : ''}
+    </div>
+  </div>`;
+}
 function renderBattleList() {
   const root = document.getElementById('battleArena');
-  const cards = allBattles.map(b => {
-    const t = battleTrainers(b);
-    let meta;
-    if (isGM()) {
-      const standing = s => b.party[s].map(id => battleMon(b, id)).filter(m => m && curHpOf(m) > 0).length;
-      meta = `${standing('a')}/${b.party.a.length} × ${standing('b')}/${b.party.b.length} de pé`;
-    } else meta = `Você é ${esc(b.trainers[b.you].name)}`;
-    return `<div class="bl-card">
-      <div class="bl-vs">${avatarHtml(t.a.avatar, t.a.name)}<span>${esc(t.a.name)}</span><span class="bt-vs">VS</span><span>${esc(t.b.name)}</span>${avatarHtml(t.b.avatar, t.b.name)}</div>
-      <div class="bl-meta"><span class="bl-status${b.status === 'ended' ? ' ended' : ''}">${b.status === 'ended' ? esc(winnerText(b)) : 'Em andamento'}</span> ${meta}</div>
-      <div class="bl-actions">
-        <button class="btn small" data-bt="open" data-id="${esc(b.id)}">Abrir</button>
-        ${isGM() ? `<button class="btn danger small" data-bt="delete" data-id="${esc(b.id)}">Excluir</button>` : ''}
-      </div>
-    </div>`;
-  }).join('');
+  // the player's own battles first; the server already sends the most recently updated first
+  const list = isGM() ? allBattles : [...allBattles.filter(b => !b.spectator), ...allBattles.filter(b => b.spectator)];
+  const section = (title, bs) => bs.length
+    ? `<div class="bl-section">${title} <span>${bs.length}</span></div><div class="bl-list">${bs.map(battleCardHtml).join('')}</div>` : '';
+  const cards = section('Em andamento', list.filter(b => b.status !== 'ended')) + section('Encerradas', list.filter(b => b.status === 'ended'));
   const empty = isGM() ? 'Nenhuma batalha ainda. Clique em "+ Nova batalha" e escolha os dois lados.'
-    : 'Nenhuma batalha ainda. Quando o Mestre te chamar, ela aparece aqui.';
+    : 'Nenhuma batalha ainda. Quando o Mestre começar uma, ela aparece aqui — pra lutar ou pra assistir.';
   root.innerHTML = `
     ${isGM() ? `<div class="top-actions"><button class="btn" data-bt="new">+ Nova batalha</button></div>${battleForm ? battleFormHtml() : ''}` : ''}
-    ${cards ? `<div class="bl-list">${cards}</div>` : `<div class="empty">${empty}</div>`}`;
+    ${cards || `<div class="empty">${empty}</div>`}`;
 }
 
 // GM: pick the two trainers and each party (up to 6, in the order clicked; the 1st starts on the field)
@@ -2883,6 +3230,10 @@ function battleArtData(b) {
   const mon = id => battleMon(b, id);
   if (isGM()) {
     const side = s => ({ trainer: t[s], mons: b.revealed[s].map(mon).filter(Boolean).map(pick) });
+    return { a: side('a'), b: side('b'), winner: b.winner };
+  }
+  if (b.spectator) {
+    const side = s => ({ trainer: t[s], mons: b.field[s].seen.map(pick) });
     return { a: side('a'), b: side('b'), winner: b.winner };
   }
   const foe = b.you === 'a' ? 'b' : 'a';
@@ -3160,7 +3511,8 @@ function onBattleClick(ev) {
   const btn = ev.target.closest('[data-bt]');
   if (btn) {
     const act = btn.dataset.bt, id = btn.dataset.id;
-    if (act === 'back') { openBattleId = null; renderBattle(); renderSidebar(); schedulePoll(); }
+    if (act === 'back') { openBattleId = null; closeFieldModal(); renderBattle(); renderSidebar(); schedulePoll(); }
+    else if (act === 'field') openFieldModal();
     else if (act === 'open') openBattleRoom(id);
     else if (act === 'delete') deleteBattleRoom(id);
     else if (act === 'new') { battleForm = { a: '', b: '', party: { a: [], b: [] } }; renderBattle(); }
@@ -3186,6 +3538,8 @@ function onBattleClick(ev) {
     }
     return;
   }
+  const fx = ev.target.closest('[data-fx]');
+  if (fx) { fieldStep(fx.dataset.fx, fx.dataset.clear ? null : parseInt(fx.dataset.d, 10)); return; }
   const sw = ev.target.closest('[data-switch]');
   if (sw && !sw.disabled) { const [side, monId] = sw.dataset.switch.split(':'); switchIn(side, monId); return; }
   const mv = ev.target.closest('[data-move]');
@@ -3208,7 +3562,8 @@ function onBattleClick(ev) {
   else if (act === 'reset') resetMon(id);
   else if (act === 'status') setStatus(id, el.dataset.s);
   else if (act === 'confuse') setBattleFlags(id, bt => { if (bt.confused) delete bt.confused; else bt.confused = true; });
-  else if (act === 'status-clear') setBattleFlags(id, bt => { delete bt.status; delete bt.confused; });
+  else if (act === 'status-clear') setBattleFlags(id, bt => { delete bt.status; delete bt.confused; delete bt.toxN; });
+  else if (act === 'residual') changeHp(id, parseInt(el.dataset.v, 10), el.dataset.why || undefined);
   else if (act === 'tera') patchBattleRoom({ tera: { side: el.dataset.side, monId: id } });
   else if (act === 'dmax' || act === 'gmax') patchBattleRoom({ dmax: { side: el.dataset.side, monId: id, gmax: act === 'gmax' } });
   else if (act === 'dmax-end') patchBattleRoom({ dmax: { side: el.dataset.side, end: true } });
@@ -3232,9 +3587,10 @@ function onBattleChange(ev) {
 }
 
 // Player: a pulsing ⚔ button while they have a battle going, and a heads-up when a new one starts.
+// Only battles they fight in — the ones they could just watch don't call them.
 function updateBattleNotice() {
   if (isGM()) return;
-  const live = allBattles.filter(b => b.status === 'active');
+  const live = allBattles.filter(b => b.status === 'active' && !b.spectator);
   document.getElementById('battleBtn').classList.toggle('notify', live.length > 0 && !battleMode);
   const fresh = live.find(b => !seenBattleIds.has(b.id));
   live.forEach(b => seenBattleIds.add(b.id));
@@ -3251,11 +3607,11 @@ function setBattleMode(on, battleId) {
   battleMode = on;
   battleForm = null;
   if (on) {
-    // a player with a battle going goes straight into it
-    const live = allBattles.filter(b => b.status === 'active');
+    // a player with a battle going goes straight into it (not into one they'd only watch)
+    const live = allBattles.filter(b => b.status === 'active' && !b.spectator);
     openBattleId = battleId || (!isGM() && live.length === 1 ? live[0].id : null);
     document.getElementById('battleToast').hidden = true;
-  } else openBattleId = null;
+  } else { openBattleId = null; closeFieldModal(); }
   document.getElementById('battlePanel').style.display = on ? 'block' : 'none';
   document.getElementById('teamsPanel').style.display = 'none';
   document.getElementById('sheetHost').style.display = 'none';
@@ -3308,7 +3664,8 @@ function renderSidebar() {
   const body = document.querySelector('.ws-body');
   if (!session) { sb.innerHTML = ''; renderRail(); return; }
   renderRail();
-  const arena = battleMode ? openBattle() : null;
+  const open = battleMode ? openBattle() : null;
+  const arena = open && !open.spectator ? open : null;   // a spectator has no team there: keeps their own fichas
   const railShown = isGM() && !arena;
   const trainer = railShown && selectedTrainerKey ? roomTrainers().find(t => t.key === selectedTrainerKey) : null;
   if (railShown && !trainer) selectedTrainerKey = null;
@@ -3468,20 +3825,29 @@ function renderTeamList() {
 }
 
 // ===== API client =====
+let lastStateRaw = '';   // the last state drawn: an identical answer isn't redrawn (any change clears it)
 const API = {
   token: null,
+  // changes in flight / sent so far: a state poll that crossed one is stale (see refreshState)
+  pendingWrites: 0, writeSeq: 0,
   async call(method, path, body) {
-    const headers = { 'Content-Type': 'application/json' };
-    if (API.token) headers['Authorization'] = 'Bearer ' + API.token;
-    const r = await fetch('/api' + path, {
-      method, headers, body: body ? JSON.stringify(body) : undefined
-    });
-    if (!r.ok) {
-      let err = {};
-      try { err = await r.json(); } catch(e) {}
-      throw new Error(err.error || ('http_' + r.status));
+    const write = method !== 'GET';
+    if (write) { API.pendingWrites++; API.writeSeq++; lastStateRaw = ''; }
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (API.token) headers['Authorization'] = 'Bearer ' + API.token;
+      const r = await fetch('/api' + path, {
+        method, headers, body: body ? JSON.stringify(body) : undefined
+      });
+      if (!r.ok) {
+        let err = {};
+        try { err = await r.json(); } catch(e) {}
+        throw new Error(err.error || ('http_' + r.status));
+      }
+      return r.json();
+    } finally {
+      if (write) { API.pendingWrites--; API.writeSeq++; }
     }
-    return r.json();
   },
   createRoom(name, gmName) { return API.call('POST', '/rooms', { name, gmName }); },
   joinRoom(roomId, name) { return API.call('POST', '/rooms/' + encodeURIComponent(roomId) + '/join', { name }); },
@@ -3496,7 +3862,9 @@ const ERR_PT = {
   sala_nao_encontrada: 'Sala não encontrada. Confira o código.',
   nome_obrigatorio: 'Preenche seu nome primeiro.',
   nao_e_seu: 'Essa ficha é de outro jogador.',
-  token_invalido: 'Sua sessão expirou. Entre na sala de novo.',
+  token_invalido: 'Essa sala não está mais disponível: a sessão expirou ou a campanha foi excluída pelo Mestre.',
+  nome_campanha_obrigatorio: 'Dá um nome pra campanha.',
+  confirmacao_invalida: 'O nome digitado não confere com o da campanha.',
   sem_token: 'Sua sessão expirou. Entre na sala de novo.',
   outra_sala: 'Essa ficha é de outra sala.',
   so_mestre: 'Só o Mestre pode fazer isso.',
@@ -3511,11 +3879,18 @@ const ERR_PT = {
   tera_usado: 'Esse treinador já terastalizou nesta batalha (dá pra desfazer no Pokémon que terastalizou).',
   tera_invalido: 'Não dá pra terastalizar agora.',
   dmax_usado: 'Esse treinador já usou o Dynamax nesta batalha (dá pra desfazer no Pokémon que usou).',
-  dmax_invalido: 'Só o Pokémon em campo pode usar Dynamax, e só com a batalha em andamento.'
+  dmax_invalido: 'Só o Pokémon em campo pode usar Dynamax, e só com a batalha em andamento.',
+  campo_invalido: 'Não deu pra mudar o clima/terreno (só com a batalha em andamento).'
 };
 const errMsg = e => ERR_PT[e.message] || ('Erro: ' + e.message);
 
 function applyState(st) {
+  // the GM may have renamed the campaign: the header and the recent-rooms list follow
+  if (st.room && currentRoom && st.room.name !== currentRoom.name) {
+    currentRoom.name = st.room.name;
+    document.getElementById('wsRoomName').textContent = st.room.name || 'Sala';
+    if (session) { session.roomName = st.room.name; saveSessionLocal(session); }
+  }
   allMons = (st.pokemon || []).map(withoutLegacyMega);
   allTeams = st.teams || [];
   allMembers = st.members || [];
@@ -3529,29 +3904,85 @@ function applyState(st) {
   updateBattleNotice();
 }
 
-let pollTimer = null;
-// faster refresh while a battle is open, so both sides see HP and switches almost live
+let pollTimer = null, polling = false;
+// Every second while a battle is open, so everyone sees HP and switches almost live; every 5s otherwise
+// and while the tab is in the background. One request at a time: the next goes out when this one answers.
+function pollDelay() { return !document.hidden && battleMode && openBattleId ? 1000 : 5000; }
 function schedulePoll() {
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = session ? setInterval(refreshState, battleMode && openBattleId ? 2500 : 5000) : null;
+  clearTimeout(pollTimer);
+  pollTimer = session ? setTimeout(pollOnce, pollDelay()) : null;
 }
+async function pollOnce() {
+  if (polling) return;   // the request still on its way schedules the next one
+  polling = true;
+  try { await refreshState(); } finally { polling = false; }
+  schedulePoll();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && session) { clearTimeout(pollTimer); pollOnce(); } });
 async function refreshState() {
   if (!session) return;
+  const seq = API.writeSeq;
   try {
     const st = await API.state();
+    // a change went out while this was on its way: the answer may predate it and undo an optimistic update
+    if (seq !== API.writeSeq || API.pendingWrites) return;
+    const raw = JSON.stringify(st);
+    if (raw === lastStateRaw) return;   // nothing changed: no redraw (keeps hover, scroll and open menus)
     applyState(st);
     renderSidebar();
-    // don't wipe a damage amount the user is typing in the arena
+    // don't wipe a damage amount the user is typing in the arena (it's drawn on the next answer)
     const typing = document.activeElement && document.activeElement.matches('#battleArena input');
     if (battleMode && !typing) renderBattle();
+    lastStateRaw = battleMode && typing ? '' : raw;
     if (document.getElementById('teamsPanel').style.display === 'block') renderTeamList();
   } catch (e) {
-    if (e.message === 'token_invalido' || e.message === 'sem_token') {
-      alert(ERR_PT.token_invalido);
-      localStorage.removeItem('gustavo_sessions');
+    if ((e.message === 'token_invalido' || e.message === 'sem_token') && session) {
+      forgetSession(session.roomId);
+      try { location.hash = ''; } catch (err) {}
       showLobby();
+      alert(ERR_PT.token_invalido);
     }
   }
+}
+
+// ===== Campaign settings (GM): rename, delete =====
+function openRoomModal() {
+  if (!isGM() || !currentRoom) return;
+  document.getElementById('rmName').value = currentRoom.name || '';
+  document.getElementById('rmConfirmName').textContent = currentRoom.name || '';
+  document.getElementById('rmConfirm').value = '';
+  document.getElementById('rmDeleteBtn').disabled = true;
+  document.getElementById('roomModal').hidden = false;
+  document.getElementById('rmName').focus();
+}
+function closeRoomModal() { document.getElementById('roomModal').hidden = true; }
+async function renameRoom() {
+  const input = document.getElementById('rmName');
+  const name = input.value.trim();
+  if (!name) { alert(ERR_PT.nome_campanha_obrigatorio); input.focus(); return; }
+  if (name === currentRoom.name) { closeRoomModal(); return; }
+  try {
+    const r = await API.call('PUT', '/room', { name });
+    currentRoom.name = r.name;
+    session.roomName = r.name;
+    saveSessionLocal(session);
+    document.getElementById('wsRoomName').textContent = r.name;
+    closeRoomModal();
+  } catch (e) { alert(errMsg(e)); }
+}
+async function deleteRoom() {
+  const confirmText = document.getElementById('rmConfirm').value.trim();
+  if (confirmText !== (currentRoom.name || '').trim()) return;
+  if (!confirm(`Excluir "${currentRoom.name}" pra sempre? Todas as fichas, NPCs e batalhas somem, pra todo mundo.`)) return;
+  const roomId = session.roomId;
+  try {
+    await API.call('DELETE', '/room', { confirm: confirmText });
+  } catch (e) { alert(errMsg(e)); return; }
+  closeRoomModal();
+  forgetSession(roomId);
+  try { location.hash = ''; } catch (e) {}
+  showLobby();
+  alert('Campanha excluída.');
 }
 
 // ===== Room flow =====
@@ -3564,7 +3995,8 @@ function showLobby() {
   stopMusic();
   document.getElementById('battleMusic').hidden = true;
   closeAvatarModal();
-  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  closeRoomModal();
+  clearTimeout(pollTimer); pollTimer = null; lastStateRaw = '';
   renderRecentRooms();
 }
 
@@ -3578,7 +4010,7 @@ function renderRecentRooms() {
   sessions.forEach(sess => {
     const div = document.createElement('div');
     div.className = 'mon-item';
-    div.innerHTML = `<div><strong>${sess.roomName || sess.roomId}</strong><br><span class="info">${sess.role === 'gm' ? 'Mestre' : 'Jogador'} · ${esc(sess.name)}${sess.character && sess.character !== sess.name ? ' (como ' + esc(sess.character) + ')' : ''}</span></div>
+    div.innerHTML = `<div><strong>${esc(sess.roomName || sess.roomId)}</strong><br><span class="info">${sess.role === 'gm' ? 'Mestre' : 'Jogador'} · ${esc(sess.name)}${sess.character && sess.character !== sess.name ? ' (como ' + esc(sess.character) + ')' : ''}</span></div>
       <div><button class="btn small enter-btn">Entrar</button></div>`;
     div.querySelector('.enter-btn').addEventListener('click', () => enterRoom(sess));
     list.appendChild(div);
@@ -3599,8 +4031,9 @@ async function enterRoom(sess) {
     saveSessionLocal(session);
     applyState(st);
   } catch (e) {
-    alert(errMsg(e));
+    if (e.message === 'token_invalido' || e.message === 'sem_token') forgetSession(sess.roomId);
     showLobby();
+    alert(errMsg(e));
     return;
   }
   try { location.hash = 'sala=' + session.roomId; } catch(e) {}
@@ -3608,6 +4041,7 @@ async function enterRoom(sess) {
   document.getElementById('lobbyView').style.display = 'none';
   document.getElementById('workspaceView').style.display = 'block';
   document.getElementById('wsRoomName').textContent = currentRoom.name || 'Sala';
+  document.getElementById('roomEditBtn').hidden = !isGM();
   const badge = document.getElementById('wsRoleBadge');
   updateRoleBadge();
   badge.className = 'role-badge' + (isGM() ? ' gm' : '');
@@ -3615,8 +4049,8 @@ async function enterRoom(sess) {
     ? 'Escolha um treinador na coluna ao lado<br>pra ver os Pokémon dele.'
     : 'Selecione um Pokémon na barra lateral<br>ou crie uma ficha nova.';
   document.getElementById('battleHint').textContent = isGM()
-    ? 'Crie uma batalha escolhendo os dois lados e o time de cada um. Você controla tudo: HP, estágios e trocas. Cada jogador vê só o próprio time e o que o adversário coloca em campo.'
-    : 'O Mestre controla a batalha. Você vê o seu time inteiro; do adversário, só o Pokémon em campo e os que ele já usou.';
+    ? 'Crie uma batalha escolhendo os dois lados e o time de cada um. Você controla tudo: HP, estágios e trocas. Cada jogador vê só o próprio time e o que o adversário coloca em campo; quem não luta pode assistir, vendo só o que entra em campo.'
+    : 'O Mestre controla a batalha. Você vê o seu time inteiro; do adversário, só o Pokémon em campo e os que ele já usou. Nas batalhas em que você não luta, dá pra assistir: aparece só o que entra em campo, sem golpes nem HP em número.';
   selectedTrainerKey = null;
   openBattleId = null;
   seenBattleIds = new Set();
@@ -3773,6 +4207,19 @@ async function init() {
   document.getElementById('artDownload').addEventListener('click', downloadBattleArt);
   document.getElementById('artCopy').addEventListener('click', copyBattleArt);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.getElementById('artModal').hidden) closeBattleArt(); });
+  document.getElementById('roomEditBtn').addEventListener('click', openRoomModal);
+  document.getElementById('rmCloseBtn').addEventListener('click', closeRoomModal);
+  document.getElementById('rmSaveBtn').addEventListener('click', renameRoom);
+  document.getElementById('rmName').addEventListener('keydown', (e) => { if (e.key === 'Enter') renameRoom(); });
+  document.getElementById('rmConfirm').addEventListener('input', (e) => {
+    document.getElementById('rmDeleteBtn').disabled = e.target.value.trim() !== ((currentRoom && currentRoom.name) || '').trim();
+  });
+  document.getElementById('rmDeleteBtn').addEventListener('click', deleteRoom);
+  document.getElementById('roomModal').addEventListener('click', (e) => { if (e.target.id === 'roomModal') closeRoomModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.getElementById('roomModal').hidden) closeRoomModal(); });
+  document.getElementById('fieldModal').addEventListener('click', onFieldModalClick);
+  document.getElementById('fxInf').addEventListener('change', renderFieldModal);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.getElementById('fieldModal').hidden) closeFieldModal(); });
 
   document.getElementById('sheetCloseBtn').addEventListener('click', closeSheet);
   document.getElementById('cancelSheetBtn').addEventListener('click', closeSheet);

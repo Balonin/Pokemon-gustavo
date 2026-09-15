@@ -56,6 +56,12 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
 ## Papéis e permissões
 
 - Quem cria a sala é **Mestre**; quem entra pelo código/link é **Jogador**
+- **Campanha (sala)**: só o Mestre, pelo ⚙ ao lado do nome, renomeia (`PUT /api/room { name }`) ou
+  exclui (`DELETE /api/room { confirm: <nome da campanha> }` — o servidor confere o nome). Excluir apaga
+  tudo da sala numa transação (`store.deleteRoom`: batalhas, fichas, times, NPCs, músicas e membros);
+  os tokens morrem, e quem estava dentro volta pro lobby na próxima atualização (`token_invalido`), com
+  só aquela sala saindo da lista de recentes (`forgetSession`). O nome novo chega a todos por
+  `/api/state` (`applyState`)
 - **Nome de login × personagem**: o nome digitado no lobby (`members.name`) é a identidade — é
   ele que está no `owner` das fichas e não muda (vai virar o login com senha). O **personagem**
   (`members.char_name`, `character` no JSON) é por sala, pode mudar a qualquer hora
@@ -83,11 +89,19 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
 - **Batalhas** (tabela `battles`): o Mestre cria (`POST /api/battles`) com dois lados — jogador,
   NPC ou ele mesmo — e o time de cada um (até 6), troca o Pokémon em campo e encerra/exclui.
   `revealed` guarda todo Pokémon que já esteve em campo
-- **Visibilidade na batalha, como nos jogos**: o jogador recebe em `/api/state` só as batalhas
-  em que luta, já filtradas por `playerBattleView` — o próprio time completo e, do adversário,
-  apenas o Pokémon em campo (espécie, nível, tipos, HP em %, estágios), o tamanho do time e
-  os já utilizados. Golpes, Status, ability, notas, ids e HP exato do outro lado nunca saem do
-  servidor. O cliente do Mestre grava `maxHp` junto do `hp` pra essa porcentagem
+- **Visibilidade na batalha, como nos jogos**: o jogador recebe em `/api/state` **todas** as
+  batalhas da sala, já filtradas. As que ele luta vêm de `playerBattleView` — o próprio time
+  completo e, do adversário, só o que `publicSideView` deixa: o Pokémon em campo (espécie, nível,
+  tipos, HP em %, estágios, condição), o tamanho do time e os já utilizados. Golpes, Status,
+  ability, notas, ids e HP exato do outro lado nunca saem do servidor. O cliente do Mestre grava
+  `maxHp` junto do `hp` pra essa porcentagem
+- **Modo espectador**: as batalhas em que o jogador **não** luta vêm de `spectatorBattleView`
+  (`spectator: true`, `field: { a, b }`), com os **dois lados** como adversário (`publicSideView`)
+  e o log de `logForPlayer(b, null, …)` — HP só em %, nada de Pokémon que não entrou em campo.
+  No cliente, `battleView` monta os dois lados com `full: false` e a arena usa `foePanelHtml` nos
+  dois painéis (sem golpes nem HP em número); a barra lateral continua com as fichas do jogador.
+  A aba "⚔ Batalhas" lista todas pra todo mundo (Em andamento / Encerradas), com "👁 Assistir"
+  nas alheias; aviso e botão pulsando só pras batalhas em que o jogador luta
 - **Log da batalha** (`battle.log`, até 300 entradas): escrito **pelo servidor** a partir das ações
   do Mestre — criação, trocas (`PATCH /api/battles/:id`), mudanças de HP/estágio
   (`PATCH /api/pokemon/:id/battle`, via `battleChangeEvents`) e fim/reabertura. Guarda ids de
@@ -150,6 +164,21 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
 - **Condições de status**: `battle.status` na ficha (`brn`, `par`, `slp`, `psn`, `tox`, `frz`) e
   `battle.confused` (acumula). Só o Mestre altera (é o mesmo `battle` do HP), aparecem pro
   adversário e no log, e somem no "Restaurar" e na cura de fim de batalha
+- **Clima e terreno**: um de cada por batalha, em `battle.weather` / `battle.terrain` = `{ kind, turns }`
+  (`turns: null` = sem limite; os climas primitivos são sempre assim). Só o Mestre muda, com
+  `PATCH /api/battles/:id { weather: { kind, turns } | { delta: ±1 } | { clear: true } }` (idem
+  `terrain`); chegar a 0 turnos encerra, como nos jogos. O servidor valida os tipos
+  (`WEATHER_KINDS`/`TERRAIN_KINDS`, `applyFieldEffect`) e escreve início/fim no log; nomes, efeitos,
+  cores e mensagens ficam nas tabelas `WEATHER`/`TERRAIN` do cliente. É público (vai em `battleHeader`
+  pra jogador e espectador). Na arena: faixa acima da cena com −/+/✕ (`fieldBarHtml`), janelinha
+  de escolha (`#fieldModal`, `renderFieldModal`) e o efeito na cena (classes `wx-*`/`tr-*`).
+  A Neve (Snow) não tira HP, como no Scarlet/Violet; quem tira é o Granizo (Hail)
+- **Dano de fim de turno**: no painel de cada Pokémon o Mestre tem botões já calculados
+  (`residualRowHtml`): clima (Areia/Granizo 1/16, com imunidade por tipo — Tera incluso — e por
+  ability), Queimadura 1/16, Veneno 1/8, Tóxico n/16 (contador `battle.toxN`, zera ao trocar/mudar de
+  status), Campo de Grama +1/16 (só "no chão": sem Voador/Levitate) e frações genéricas. A base é o HP
+  máximo sem o Dynamax, arredondando pra baixo, mínimo 1 (`residualOf`). O motivo vai junto
+  (`reason` no `PATCH /api/pokemon/:id/battle`, lista `RESIDUAL_REASONS`) e aparece no log
 - **Fim de batalha**: o Mestre escolhe o vencedor (`winner`: `a`, `b` ou `draw`). A arte de resumo
   (`drawBattleArt`, no frontend) é desenhada em 640×360 e ampliada 2× sem suavização; os
   Pokémon aparecem na ordem de `revealed` (ordem de entrada em campo), preenchendo o arco de
@@ -193,7 +222,10 @@ Sprites vêm do repositório público do PokeAPI por URL, não ficam no projeto.
   considera abilities como Levitate). O campo `notes` continua salvo na ficha, mas não aparece
 - Texto em canvas pixel art (arte de fim de batalha): usar o `text()` de `drawBattleArt`, que tira
   a suavização — `fillText` direto sai borrado quando a imagem é ampliada
-- O frontend faz polling do servidor a cada 5s (`refreshState`)
+- O frontend faz polling do servidor (`schedulePoll` → `pollOnce` → `refreshState`): a cada **1s** com
+  uma batalha aberta, 5s fora dela ou com a aba em segundo plano. Um pedido por vez (o próximo só sai
+  quando o anterior responde); resposta igual à última não redesenha; resposta que cruzou uma gravação
+  (`API.pendingWrites`/`API.writeSeq`) é descartada, pra não desfazer a atualização otimista do Mestre
 
 ## Como rodar local
 
@@ -214,4 +246,3 @@ DATABASE_URL=postgres://... npm start
 - Controle de turno e iniciativa por SPE
 - Rolagem de dados integrada (acerto, dano, crítico, esquiva, bloqueio, colisão)
 - Tradução das descrições dos golpes
-- Clima (Weather) e Terreno (Terrain) ativos na batalha
