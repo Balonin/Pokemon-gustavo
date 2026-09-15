@@ -318,12 +318,23 @@ body.in-room { max-width: none; padding: 12px; }
 .move-card-add { --fill: var(--panel-deep); --edge: #4a4050; padding: 8px; text-align: center; color: var(--ink-soft); cursor: pointer; font-size: 0.708rem; font-family: var(--font-pixel); display: flex; align-items: center; justify-content: center; min-height: 0; min-width: 0; }
 .move-card-add:hover { --edge: #7a8a9a; }
 .move-info-badges { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 5px; flex-shrink: 0; }
+/* While a move is being edited its row grows to fit what it shows (up to the whole list, less a title-bar
+   strip for each of the other three), and goes back to four equal rows when done. */
+.moves-grid[data-edit="0"] { grid-template-rows: fit-content(calc(100% - 114px)) repeat(3, minmax(30px, 1fr)); }
+.moves-grid[data-edit="1"] { grid-template-rows: minmax(30px, 1fr) fit-content(calc(100% - 114px)) repeat(2, minmax(30px, 1fr)); }
+.moves-grid[data-edit="2"] { grid-template-rows: repeat(2, minmax(30px, 1fr)) fit-content(calc(100% - 114px)) minmax(30px, 1fr); }
+.moves-grid[data-edit="3"] { grid-template-rows: repeat(3, minmax(30px, 1fr)) fit-content(calc(100% - 114px)); }
+.move-card.editing .mv_desc { min-height: 76px; flex-shrink: 0; }
+.col-moves.editing-move .ability-slot { display: none; }
+/* on a short screen the card may still scroll: its buttons stay at the bottom edge, always reachable */
+.move-card.editing .mv-remove-row { position: sticky; bottom: 0; margin-top: 5px; padding-top: 6px; background: var(--panel); }
 .move-manual-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 5px; flex-shrink: 0; }
 .move-not-found { color: #e86050; font-size: 0.779rem; margin-top: 3px; flex-shrink: 0; }
 .mv-remove-row { text-align: right; margin-top: 5px; flex-shrink: 0; }
 @media (max-width: 760px) {
   .ability-slot { flex: none; height: 110px; }
   .moves-grid { grid-template-rows: repeat(4, 130px); grid-auto-rows: 130px; }
+  .moves-grid[data-edit] { grid-template-rows: none; grid-auto-rows: minmax(130px, auto); }   /* the page scrolls: grow freely */
 }
 
 .sheet-section-title { flex-shrink: 0; font-family: var(--font-pixel); font-size: 0.649rem; margin: 8px 0 5px; color: var(--ink-soft); }
@@ -2433,7 +2444,12 @@ function renderEvoNote(container) {
 function renderMovesRegion() {
   const el = document.getElementById('movesRegion');
   const holder = sheetMega && draft.mega ? draft.megaSheet : draft;   // the Mega sheet has its own moves
-  let html = '<div class="moves-grid">';
+  // the row of the move being edited grows to what it needs for the moment (see .moves-grid[data-edit])
+  const editRow = editingRegion === 'move:new' ? (holder.moves || []).length
+    : (editingRegion && /^move:\d+$/.test(editingRegion) ? parseInt(editingRegion.slice(5), 10) : -1);
+  let html = `<div class="moves-grid"${editRow >= 0 && editRow < 4 ? ` data-edit="${editRow}"` : ''}>`;
+  // meanwhile the Ability box steps aside, so the moves get the whole column
+  el.closest('.col-moves').classList.toggle('editing-move', editRow >= 0);
   (holder.moves || []).forEach((mv, idx) => {
     const key = 'move:' + idx;
     const moveColor = mv.type ? (TYPE_COLORS[mv.type] || '') : '';
