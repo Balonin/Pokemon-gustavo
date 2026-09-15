@@ -92,7 +92,10 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
 - **Avatar** do treinador (coluna `members.avatar`, e `npcs.avatar`): `''` (placeholder
   com a inicial), `mon:<id da Pokédex>` (sprite) ou data URL raster de 96×96
   (`cleanAvatar` recusa SVG). Fica sincronizado em todos os tokens do mesmo nome.
-  O Jogador escolhe ao entrar na sala e troca depois pelo ícone no topo
+  O Jogador escolhe ao entrar na sala e troca depois pelo ícone no topo. Imagem enviada passa por um
+  enquadramento antes (`openCrop`/`applyCrop`): arrastar, zoom (controle, roda do mouse, pinça) e prévia
+  em 96 e 32 px; o quadrado na tela é exatamente o avatar. "Ajustar enquadramento" reabre enquanto a
+  janela está aberta (a imagem original não é guardada no servidor, só o 96×96)
 - Só o Mestre recebe `members` e `npcs` em `/api/state`
 - **HP e estágios de batalha** (`battle` da ficha) só o Mestre altera. Jogador pode reordenar
   as próprias fichas (`order`), e salvar uma ficha preserva `battle` e `order`

@@ -795,6 +795,25 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
 .avatar-opts { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .avatar-opts label { margin: 2px 0 0; }
 @media (max-width: 420px) { .avatar-editor { flex-direction: column; align-items: center; } .avatar-opts { width: 100%; } }
+.av-crop { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; margin-top: 12px; }
+.av-crop[hidden], .avatar-editor[hidden] { display: none; }
+.crop-stage {
+  width: min(260px, 100%); aspect-ratio: 1; cursor: grab; touch-action: none; border: 3px solid var(--outline);
+  box-shadow: 0 0 0 2px var(--gold);
+  background: repeating-conic-gradient(#2e2836 0 25%, #3a3242 0 50%) 0 0 / 16px 16px;   /* shows transparency */
+}
+.crop-stage:active { cursor: grabbing; }
+.crop-stage:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+.crop-side { flex: 1; min-width: 150px; display: flex; flex-direction: column; gap: 8px; }
+.crop-l { margin: 0; font-family: var(--font-pixel); font-size: 0.56rem; color: var(--ink-soft); }
+.crop-prevs { display: flex; align-items: flex-end; gap: 10px; }
+.crop-prev { width: 96px; height: 96px; border: 2px solid var(--outline); background: var(--panel-hi); image-rendering: pixelated; }
+.crop-prev.small { width: 32px; height: 32px; }
+.crop-zoom { display: flex; align-items: center; gap: 6px; }
+.crop-zoom input { flex: 1; min-width: 0; padding: 0; accent-color: var(--gold); }
+.crop-zoom .mini-btn { padding: 4px 8px; }
+.crop-hint { font-size: 0.72rem; line-height: 1.45; color: var(--ink-soft); }
+.crop-btns { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 </style>
 </head>
 <body>
@@ -952,14 +971,38 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
       <label for="avName" id="avNameLabel">Nome do NPC</label>
       <input id="avName" maxlength="40" placeholder="ex: Líder Brock" autocomplete="off">
     </div>
-    <div class="avatar-editor">
+    <div class="avatar-editor" id="avEditor">
       <div id="avPreview"></div>
       <div class="avatar-opts">
         <button class="btn secondary small" id="avUploadBtn">📁 Enviar imagem</button>
+        <button class="btn secondary small" id="avRecropBtn" hidden>✂ Ajustar enquadramento</button>
         <input type="file" id="avFile" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
         <label for="avMon">Ou um Pokémon</label>
         <input id="avMon" list="speciesList" placeholder="ex: Pikachu" autocomplete="off">
         <button class="btn secondary small" id="avPlaceholderBtn">Usar placeholder</button>
+      </div>
+    </div>
+    <!-- framing an uploaded picture: the square is exactly what becomes the avatar -->
+    <div class="av-crop" id="avCrop" hidden>
+      <canvas class="crop-stage" id="cropCanvas" tabindex="0" aria-label="Enquadrar a imagem: arraste pra mover, roda do mouse pra zoom"></canvas>
+      <div class="crop-side">
+        <div class="crop-l">Como vai ficar</div>
+        <div class="crop-prevs">
+          <canvas class="crop-prev" id="cropPreview" width="96" height="96"></canvas>
+          <canvas class="crop-prev small" id="cropPreviewSmall" width="32" height="32"></canvas>
+        </div>
+        <label for="cropZoom" class="crop-l">Zoom</label>
+        <div class="crop-zoom">
+          <button class="mini-btn" id="cropZoomOut" title="Afastar">−</button>
+          <input type="range" id="cropZoom" min="0" max="1000" value="0">
+          <button class="mini-btn" id="cropZoomIn" title="Aproximar">+</button>
+        </div>
+        <div class="crop-hint">Arraste a imagem pra enquadrar. A roda do mouse (ou pinça, no celular) também dá zoom.</div>
+        <div class="crop-btns">
+          <button class="mini-btn" id="cropReset">Centralizar</button>
+          <button class="btn secondary small" id="cropCancel">Cancelar</button>
+          <button class="btn small" id="cropOk">Usar imagem</button>
+        </div>
       </div>
     </div>
     <div class="theme-box">
@@ -1449,28 +1492,161 @@ function avatarHtml(avatar, name) {
   return `<span class="av" style="background:${AV_COLORS[h % AV_COLORS.length]}">${esc(n.charAt(0).toUpperCase())}</span>`;
 }
 
-// Crops the picture to a centered square and stores it at 96×96. Small pixel art is
-// scaled up without smoothing so it stays crisp.
-function imageFileToAvatar(file) {
+function loadImageFile(file) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const S = 96;
-      const side = Math.min(img.naturalWidth, img.naturalHeight);
-      const c = document.createElement('canvas');
-      c.width = c.height = S;
-      const ctx = c.getContext('2d');
-      ctx.imageSmoothingEnabled = side >= S;
-      ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, S, S);
-      let data = c.toDataURL('image/webp', 0.85);
-      if (!data.startsWith('data:image/webp')) data = c.toDataURL('image/png');
-      resolve(data);
-    };
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('imagem_invalida')); };
     img.src = url;
   });
+}
+
+// ----- Framing an uploaded picture -----
+// The square on screen is exactly what becomes the 96×96 avatar: drag to move it, zoom with the slider,
+// the mouse wheel or a pinch. The picture always covers the square (no empty borders). Small pixel art
+// is scaled without smoothing so it stays crisp; photos are smoothed.
+const AVATAR_SIZE = 96;
+let crop = null;   // { img, w, h, s (screen px per picture px), x, y (picture's corner on the square), min, max, pointers }
+const cropCanvas = () => document.getElementById('cropCanvas');
+function cropSmooth() { return Math.min(crop.w, crop.h) >= AVATAR_SIZE; }
+
+function openCrop(img, state) {
+  const cv = cropCanvas();
+  const S = Math.round(260 * Math.min(2, window.devicePixelRatio || 1));   // sharp on high-density screens
+  cv.width = cv.height = S;
+  const w = img.naturalWidth, h = img.naturalHeight;
+  const min = S / Math.min(w, h);                              // the picture's short side fills the square
+  const max = Math.max(min, Math.min(min * 10, S / 8));        // up to 10×, but always at least 8 picture px across
+  crop = { img, w, h, min, max, pointers: new Map(), s: min, x: (S - w * min) / 2, y: (S - h * min) / 2 };
+  if (state && state.S) {   // re-framing: same framing as before, in this square's pixels
+    const k = S / state.S;
+    Object.assign(crop, { s: state.s * k, x: state.x * k, y: state.y * k });
+  }
+  document.getElementById('avEditor').hidden = true;
+  document.getElementById('avCrop').hidden = false;
+  clampCrop(); syncCropZoom(); drawCrop();
+  cv.focus();
+}
+function closeCrop() {
+  crop = null;
+  document.getElementById('avCrop').hidden = true;
+  document.getElementById('avEditor').hidden = false;
+}
+function clampCrop() {
+  const S = cropCanvas().width;
+  crop.s = Math.max(crop.min, Math.min(crop.max, crop.s));
+  crop.x = Math.min(0, Math.max(S - crop.w * crop.s, crop.x));
+  crop.y = Math.min(0, Math.max(S - crop.h * crop.s, crop.y));
+}
+// zoom by `factor` keeping the picture point under (px, py) in place
+function zoomCropAt(px, py, factor) {
+  const s0 = crop.s;
+  crop.s = Math.max(crop.min, Math.min(crop.max, s0 * factor));
+  crop.x = px - (px - crop.x) * (crop.s / s0);
+  crop.y = py - (py - crop.y) * (crop.s / s0);
+  clampCrop(); syncCropZoom(); drawCrop();
+}
+// the slider is logarithmic: every step zooms by the same proportion
+function syncCropZoom() {
+  const r = crop.max > crop.min ? Math.log(crop.s / crop.min) / Math.log(crop.max / crop.min) : 0;
+  const el = document.getElementById('cropZoom');
+  el.value = Math.round(r * 1000);
+  el.disabled = crop.max <= crop.min;
+}
+function drawCrop() {
+  const cv = cropCanvas(), S = cv.width, g = cv.getContext('2d');
+  g.clearRect(0, 0, S, S);
+  g.imageSmoothingEnabled = cropSmooth();
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(crop.img, crop.x, crop.y, crop.w * crop.s, crop.h * crop.s);
+  // thirds, to help centre a face
+  g.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+  g.lineWidth = Math.max(1, S / 260);
+  g.beginPath();
+  [1, 2].forEach(i => { const p = Math.round((S * i) / 3) + 0.5; g.moveTo(p, 0); g.lineTo(p, S); g.moveTo(0, p); g.lineTo(S, p); });
+  g.stroke();
+  const big = document.getElementById('cropPreview');
+  renderCropTo(big);
+  const small = document.getElementById('cropPreviewSmall').getContext('2d');
+  small.clearRect(0, 0, 32, 32);
+  small.imageSmoothingEnabled = true;
+  small.imageSmoothingQuality = 'high';
+  small.drawImage(big, 0, 0, 32, 32);
+}
+// the part of the picture inside the square, at the avatar's size
+function renderCropTo(out) {
+  const S = cropCanvas().width, g = out.getContext('2d');
+  g.clearRect(0, 0, out.width, out.height);
+  g.imageSmoothingEnabled = cropSmooth();
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(crop.img, -crop.x / crop.s, -crop.y / crop.s, S / crop.s, S / crop.s, 0, 0, out.width, out.height);
+}
+function cropToAvatar() {
+  const c = document.createElement('canvas');
+  c.width = c.height = AVATAR_SIZE;
+  renderCropTo(c);
+  const data = c.toDataURL('image/webp', 0.85);
+  return data.startsWith('data:image/webp') ? data : c.toDataURL('image/png');
+}
+// "Usar imagem": the avatar becomes this framing, remembered so it can be adjusted again
+function applyCrop() {
+  if (!crop || !avatarCtx) return;
+  avatarCtx.avatar = cropToAvatar();
+  avatarCtx.crop = { img: crop.img, s: crop.s, x: crop.x, y: crop.y, S: cropCanvas().width };
+  closeCrop();
+  renderAvatarPreview();
+}
+function cropPoint(e) {
+  const cv = cropCanvas(), r = cv.getBoundingClientRect();
+  return { x: ((e.clientX - r.left) * cv.width) / r.width, y: ((e.clientY - r.top) * cv.height) / r.height };
+}
+function onCropPointerDown(e) {
+  if (!crop) return;
+  e.preventDefault();
+  cropCanvas().setPointerCapture(e.pointerId);
+  crop.pointers.set(e.pointerId, cropPoint(e));
+}
+function onCropPointerMove(e) {
+  if (!crop || !crop.pointers.has(e.pointerId)) return;
+  const prev = crop.pointers.get(e.pointerId), cur = cropPoint(e);
+  crop.pointers.set(e.pointerId, cur);
+  if (crop.pointers.size === 1) {   // drag
+    crop.x += cur.x - prev.x;
+    crop.y += cur.y - prev.y;
+    clampCrop(); drawCrop();
+  } else if (crop.pointers.size === 2) {   // pinch: zoom around the fingers' midpoint, and follow it
+    const other = [...crop.pointers.entries()].find(([id]) => id !== e.pointerId)[1];
+    const d0 = Math.hypot(prev.x - other.x, prev.y - other.y), d1 = Math.hypot(cur.x - other.x, cur.y - other.y);
+    const m0 = { x: (prev.x + other.x) / 2, y: (prev.y + other.y) / 2 }, m1 = { x: (cur.x + other.x) / 2, y: (cur.y + other.y) / 2 };
+    crop.x += m1.x - m0.x;
+    crop.y += m1.y - m0.y;
+    zoomCropAt(m1.x, m1.y, d0 > 0 ? d1 / d0 : 1);
+  }
+}
+function onCropPointerUp(e) { if (crop) crop.pointers.delete(e.pointerId); }
+function onCropWheel(e) {
+  if (!crop) return;
+  e.preventDefault();
+  const p = cropPoint(e);
+  zoomCropAt(p.x, p.y, Math.exp(-e.deltaY * 0.0015));
+}
+function onCropKey(e) {
+  if (!crop) return;
+  const S = cropCanvas().width, step = S / 26;
+  const moves = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+  if (moves[e.key]) { crop.x += moves[e.key][0]; crop.y += moves[e.key][1]; clampCrop(); drawCrop(); }
+  else if (e.key === '+' || e.key === '=') zoomCropAt(S / 2, S / 2, 1.15);
+  else if (e.key === '-') zoomCropAt(S / 2, S / 2, 1 / 1.15);
+  else if (e.key === 'Enter') applyCrop();
+  else return;
+  e.preventDefault();
+}
+function onCropSlider(e) {
+  if (!crop) return;
+  const S = cropCanvas().width;
+  const target = crop.min * Math.pow(crop.max / crop.min, e.target.value / 1000);
+  zoomCropAt(S / 2, S / 2, target / crop.s);
 }
 
 function updateRoleBadge() {
@@ -1539,6 +1715,7 @@ function openAvatarModal(mode, npc, firstTime) {
   nameInput.focus();
 }
 function closeAvatarModal() {
+  closeCrop();
   document.getElementById('avatarModal').hidden = true;
   avatarCtx = null;
 }
@@ -1547,8 +1724,11 @@ function renderAvatarPreview() {
   const typed = document.getElementById('avName').value.trim();
   const name = avatarCtx.mode === 'me' ? (typed || currentTrainer) : (typed || '?');
   document.getElementById('avPreview').innerHTML = avatarHtml(avatarCtx.avatar, name);
+  // the picture uploaded now can be framed again (a Pokémon or the placeholder in its place: no)
+  document.getElementById('avRecropBtn').hidden = !(avatarCtx.crop && (avatarCtx.avatar || '').startsWith('data:image/'));
 }
 async function saveAvatarModal() {
+  if (crop) applyCrop();   // "Salvar" while framing keeps the framing on screen
   const c = avatarCtx;
   if (!c) return;
   const name = document.getElementById('avName').value.trim();
@@ -4367,10 +4547,25 @@ async function init() {
   document.getElementById('avUploadBtn').addEventListener('click', () => document.getElementById('avFile').click());
   document.getElementById('avFile').addEventListener('change', async (e) => {
     const file = e.target.files && e.target.files[0];
+    e.target.value = '';   // choosing the same file again still opens the framing
     if (!file || !avatarCtx) return;
-    try { avatarCtx.avatar = await imageFileToAvatar(file); renderAvatarPreview(); }
+    try { openCrop(await loadImageFile(file)); }
     catch (err) { alert(errMsg(err)); }
   });
+  document.getElementById('avRecropBtn').addEventListener('click', () => { if (avatarCtx && avatarCtx.crop) openCrop(avatarCtx.crop.img, avatarCtx.crop); });
+  const cropCv = document.getElementById('cropCanvas');
+  cropCv.addEventListener('pointerdown', onCropPointerDown);
+  cropCv.addEventListener('pointermove', onCropPointerMove);
+  cropCv.addEventListener('pointerup', onCropPointerUp);
+  cropCv.addEventListener('pointercancel', onCropPointerUp);
+  cropCv.addEventListener('wheel', onCropWheel, { passive: false });
+  cropCv.addEventListener('keydown', onCropKey);
+  document.getElementById('cropZoom').addEventListener('input', onCropSlider);
+  document.getElementById('cropZoomIn').addEventListener('click', () => { if (crop) zoomCropAt(cropCv.width / 2, cropCv.height / 2, 1.25); });
+  document.getElementById('cropZoomOut').addEventListener('click', () => { if (crop) zoomCropAt(cropCv.width / 2, cropCv.height / 2, 1 / 1.25); });
+  document.getElementById('cropReset').addEventListener('click', () => { if (crop) openCrop(crop.img); });
+  document.getElementById('cropCancel').addEventListener('click', closeCrop);
+  document.getElementById('cropOk').addEventListener('click', applyCrop);
   document.getElementById('avMon').addEventListener('input', (e) => {
     const dex = DEX_BY_NAME[e.target.value.trim().toLowerCase()];
     if (dex && avatarCtx) { avatarCtx.avatar = 'mon:' + dex.id; renderAvatarPreview(); }
@@ -4406,7 +4601,7 @@ async function init() {
   document.getElementById('avSaveBtn').addEventListener('click', saveAvatarModal);
   document.getElementById('avCancelBtn').addEventListener('click', closeAvatarModal);
   document.getElementById('avDeleteBtn').addEventListener('click', deleteNpcFromModal);
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && avatarCtx) closeAvatarModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && avatarCtx) { if (crop) closeCrop(); else closeAvatarModal(); } });
 
   document.getElementById('newTeamBtn').addEventListener('click', () => openTeamEditor(null));
   document.getElementById('cancelTeamBtn').addEventListener('click', closeTeamEditor);
