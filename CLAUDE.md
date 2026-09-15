@@ -49,6 +49,11 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
 ## Papéis e permissões
 
 - Quem cria a sala é **Mestre**; quem entra pelo código/link é **Jogador**
+- **Nome de login × personagem**: o nome digitado no lobby (`members.name`) é a identidade — é
+  ele que está no `owner` das fichas e não muda (vai virar o login com senha). O **personagem**
+  (`members.char_name`, `character` no JSON) é por sala, pode mudar a qualquer hora
+  (`PUT /api/me/character`) e é o que aparece pros outros (`roomTrainers`, `trainerInfo`); vazio =
+  mostra o nome de login. Ao entrar numa sala sem personagem, a janela de caracterização abre sozinha
 - Cada pessoa recebe um **token** salvo no `localStorage` e enviado no header
   `Authorization: Bearer <token>`
 - **As permissões são aplicadas no servidor**, não no cliente:
@@ -88,6 +93,11 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   ele mesmo enviou; trocar/remover o tema apaga o arquivo antigo. Na arena, `syncBattleMusic`
   reveza os temas dos dois lados (um acaba, entra o outro); com um só, repete. Sem nenhum, toca
   `DEFAULT_BATTLE_THEME` (no `index.html`; hoje `null` — o tema padrão ainda vai ser enviado)
+- **HP depois da batalha**: ao encerrar, o servidor guarda em `battle.final` o `battle` (HP/estágios)
+  de cada Pokémon dos dois times e **cura as fichas** pra próxima batalha — exceto as que ainda
+  estão em outra batalha em andamento. A batalha encerrada é exibida a partir de `final`
+  (`battleMon` no cliente; `playerBattleView` no servidor; o jogador recebe `mine.final`) e fica
+  sem controles. Reabrir devolve às fichas o estado de `final`
 - **Fim de batalha**: o Mestre escolhe o vencedor (`winner`: `a`, `b` ou `draw`). A arte de resumo
   (`drawBattleArt`, no frontend) é desenhada em 640×360 e ampliada 2× sem suavização; os
   Pokémon aparecem na ordem de `revealed` (ordem de entrada em campo)
@@ -124,7 +134,11 @@ Sprites vêm do repositório público do PokeAPI por URL, não ficam no projeto.
 - Estética pixel art estilo GBA/PokéRogue: fontes "Press Start 2P" e "Silkscreen",
   molduras com `clip-path` de cantos em degrau e borda em gradiente por camadas
   (`box-shadow` com `inset`), variáveis `--fill` e `--edge` por componente
-- A ficha tem proporção 16:9 para encaixar em slides
+- A ficha tem proporção 16:9 para encaixar em slides. No canto de baixo à direita fica o quadro
+  de fraquezas e resistências (`matchupHtml`, tabela `TYPE_CHART` da 6ª geração em diante; não
+  considera abilities como Levitate). O campo `notes` continua salvo na ficha, mas não aparece
+- Texto em canvas pixel art (arte de fim de batalha): usar o `text()` de `drawBattleArt`, que tira
+  a suavização — `fillText` direto sai borrado quando a imagem é ampliada
 - O frontend faz polling do servidor a cada 5s (`refreshState`)
 
 ## Como rodar local

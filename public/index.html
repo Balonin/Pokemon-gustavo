@@ -45,7 +45,7 @@ h3 { font-family: var(--font-pixel); font-size: 0.708rem; margin: 0 0 8px; color
 /* ====== PokeRogue pixel frame ====== */
 .card, .panel, .tab-btn, .btn, .mon-tile, .team-mon-chip, .mon-item, .sheet, .role-badge,
 .art-frame, .shiny-btn, .stat-box, .points-banner, .hp-bar, .nature-box,
-.ability-box, .notes-box, .move-card, .move-card-add, .ws-rail, .tr-tile, .bn-tile, .bt-panel, .bl-card, .toast, .bt-log, .bt-music {
+.ability-box, .matchup-box, .move-card, .move-card-add, .ws-rail, .tr-tile, .bn-tile, .bt-panel, .bl-card, .toast, .bt-log, .bt-music {
   clip-path: polygon(
     calc(var(--u)*2) 0, calc(100% - var(--u)*2) 0,
     calc(100% - var(--u)*2) var(--u), calc(100% - var(--u)) var(--u),
@@ -179,7 +179,7 @@ body.in-room { max-width: none; padding: 12px; }
 .ability-slot { flex: 1; display: flex; min-height: 0; min-width: 0; overflow: hidden; }
 .col-moves-list { flex: 4; display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; overflow: hidden; }
 /* mesma altura da caixa de Ability (1/5 da coluna), independente do conteúdo */
-.notes-slot { flex: 0 0 calc((100% - 8px) / 5); display: flex; min-height: 0; min-width: 0; overflow: hidden; }
+.matchup-slot { flex: 0 0 calc((100% - 8px) / 5); display: flex; min-height: 0; min-width: 0; overflow: hidden; }
 @media (max-width: 760px) {
   .capture-area { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; flex: none; }
   .col-stats, .col-moves, .col-art { min-height: auto; }
@@ -225,14 +225,14 @@ body.in-room { max-width: none; padding: 12px; }
 
 .nature-box { --fill: var(--panel); --edge: #5a6a7a; --u: 2px; height: 40px; flex-shrink: 0; padding: 0 16px; font-size: 0.779rem; letter-spacing: 0.04em; cursor: pointer; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--ink); }
 
-.ability-box, .notes-box { --fill: var(--panel); --edge: var(--strip-color, #5a6a7a); padding: 0; font-size: 0.85rem; cursor: pointer; flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; line-height: 1.5; width: 100%; }
+.ability-box { --fill: var(--panel); --edge: var(--strip-color, #5a6a7a); padding: 0; font-size: 0.85rem; cursor: pointer; flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; line-height: 1.5; width: 100%; }
 .type-strip {
   color: var(--strip-color, var(--ink-soft)); background: none;
   font-family: var(--font-pixel); font-size: 0.614rem;
   padding: 0; margin: 12px 14px 7px; flex-shrink: 0; line-height: 1.4;
   text-shadow: 1px 1px 0 var(--outline); letter-spacing: 0.05em;
 }
-.ability-box .box-body, .notes-box .box-body { padding: 0 14px 12px; flex: 1; min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; overflow-wrap: anywhere; }
+.ability-box .box-body { padding: 0 14px 12px; flex: 1; min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; overflow-wrap: anywhere; }
 .ab-name { font-family: var(--font-pixel); font-size: 0.64rem; line-height: 1.5; color: #fff; text-shadow: 1px 1px 0 var(--outline); }
 .ab-desc { margin-top: 4px; font-size: 0.76rem; line-height: 1.45; color: var(--ink-soft); }
 .ab-tag { display: inline-block; vertical-align: middle; margin-left: 4px; padding: 1px 4px; border: 2px solid var(--outline); background: #4a3a10; color: var(--gold); font-family: var(--font-pixel); font-size: 0.42rem; line-height: 1.3; text-shadow: none; }
@@ -241,11 +241,23 @@ body.in-room { max-width: none; padding: 12px; }
 .ab-opt { border: 2px solid var(--outline); background: var(--panel-hi); color: var(--ink); cursor: pointer; padding: 4px 7px; font-family: var(--font-pixel); font-size: 0.48rem; line-height: 1.4; }
 .ab-opt:hover { background: #3a2028; }
 .ab-opt.sel { background: var(--red); color: #fff; }
-.notes-box .notes-text { white-space: pre-wrap; overflow-wrap: anywhere; flex: 1; min-height: 0; overflow-y: auto; }
-.notes-box textarea { flex: 1; min-height: 0; resize: none; font-size: 0.85rem; }
+/* weaknesses / resistances: 18 types in two rows, multiplier under each */
+.matchup-box { --fill: var(--panel); --edge: #5a6a7a; width: 100%; flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.matchup-box .type-strip { margin: 9px 12px 5px; font-size: 0.5rem; }
+.mu-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 3px; padding: 0 11px 11px; }
+.mu-cell { min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) minmax(0, 1.2fr); border: 2px solid var(--outline); background: var(--outline); gap: 2px; }
+.mu-type, .mu-val { display: flex; align-items: center; justify-content: center; min-height: 0; overflow: hidden;
+  font-family: var(--font-pixel); line-height: 1; color: #fff; text-shadow: 1px 1px 0 var(--outline), -1px 0 0 var(--outline), 0 -1px 0 var(--outline), 1px 0 0 var(--outline); }
+.mu-type { background: var(--tc); font-size: 8px; letter-spacing: -0.5px; }   /* the pixel font's native size: crisp */
+.mu-val { font-size: 8px; background: var(--panel-deep); }
+.mu-val.x2 { background: #3f8a26; }
+.mu-val.x4 { background: #6ccc2c; color: #fff8c0; }
+.mu-val.x12 { background: #a3201c; }
+.mu-val.x14 { background: #6a1010; }
+.mu-val.x0 { background: #24232b; color: #c8c8d0; }
 @media (max-width: 760px) {
   .art-box { flex: none; height: 240px; }
-  .notes-slot { flex: none; height: 120px; }
+  .matchup-slot { flex: none; height: 130px; }
 }
 
 .nature-table-inline { max-height: 100%; overflow-y: auto; border: 2px solid var(--outline); background: var(--panel-deep); }
@@ -328,6 +340,13 @@ body.in-room { max-width: none; padding: 12px; }
 
 .sb-item.field { border-color: var(--gold); }
 
+.bt-panel .matchup-box { flex: none; box-shadow: none; clip-path: none; background: transparent; }
+.bt-panel .matchup-box .type-strip { margin: 2px 0 6px; font-size: 0.52rem; }
+.bt-panel .mu-grid { padding: 0; grid-template-rows: repeat(2, 38px); gap: 4px; }
+.bt-panel .mu-type, .bt-panel .mu-val { font-size: 8px; }
+.bp-types { display: flex; gap: 4px; flex-wrap: wrap; }
+.bp-note { font-size: 0.72rem; line-height: 1.45; color: var(--ink-soft); }
+
 /* battle log */
 .bt-log { --fill: var(--panel-deep); --edge: #5a6a7a; padding: 12px 14px; }
 .bt-log-head { font-family: var(--font-pixel); font-size: 0.56rem; color: var(--gold); margin-bottom: 8px; }
@@ -370,8 +389,8 @@ body.in-room { max-width: none; padding: 12px; }
 .theme-hint { font-size: 0.7rem; color: var(--ink-soft); line-height: 1.4; }
 
 /* end-of-battle art */
-.art-modal { max-width: 920px; }
-#artCanvas { display: block; width: 100%; height: auto; margin-top: 10px; image-rendering: pixelated; border: 2px solid var(--outline); background: #558a61; }
+.modal.art-modal { max-width: min(1340px, calc(100vw - 32px)); }   /* beats the generic .modal width */
+#artCanvas { display: block; max-width: 100%; height: auto; margin: 10px auto 0; image-rendering: pixelated; border: 2px solid var(--outline); background: #558a61; }
 #artCanvas.loading { opacity: 0.4; }
 
 /* "a new battle started" heads-up for players */
@@ -638,7 +657,7 @@ body.in-room { max-width: none; padding: 12px; }
           </div>
         </div>
         <div class="type-badges-center" id="typeBadges"></div>
-        <div id="notesRegion" class="notes-slot"></div>
+        <div id="matchupRegion" class="matchup-slot"></div>
       </div>
     </div>
 
@@ -698,7 +717,7 @@ body.in-room { max-width: none; padding: 12px; }
     <h2 id="avTitle">Sua caracterização</h2>
     <div class="sub" id="avIntro" style="margin:10px 0 0;"></div>
     <div id="avNameRow">
-      <label for="avName">Nome do NPC</label>
+      <label for="avName" id="avNameLabel">Nome do NPC</label>
       <input id="avName" maxlength="40" placeholder="ex: Líder Brock" autocomplete="off">
     </div>
     <div class="avatar-editor">
@@ -762,6 +781,50 @@ const TYPE_COLORS = {
   "Psíquico":"#e8608f", Inseto:"#a7c23a", Pedra:"#bda45c", Fantasma:"#7566bf", "Dragão":"#7a63e8",
   Sombrio:"#75655c", "Aço":"#a8adb8", Fada:"#e8a3d0"
 };
+// ----- Type matchups (Gen 6+) -----
+const TYPE_ORDER = ['Normal', 'Fogo', 'Água', 'Elétrico', 'Grama', 'Gelo', 'Lutador', 'Venenoso', 'Solo',
+  'Voador', 'Psíquico', 'Inseto', 'Pedra', 'Fantasma', 'Dragão', 'Sombrio', 'Aço', 'Fada'];
+// no accents on top of letters: the cells are too short for them at the pixel font's 8px
+const TYPE_ABBR = { Normal: 'NOR', Fogo: 'FOG', 'Água': 'AGU', 'Elétrico': 'ELE', Grama: 'GRA', Gelo: 'GEL', Lutador: 'LUT',
+  Venenoso: 'VEN', Solo: 'SOL', Voador: 'VOA', 'Psíquico': 'PSI', Inseto: 'INS', Pedra: 'PED', Fantasma: 'FAN',
+  'Dragão': 'DRA', Sombrio: 'SOM', 'Aço': 'AÇO', Fada: 'FAD' };
+// attacking type → defending types it doesn't hit for 1×
+const TYPE_CHART = {
+  Normal: { Pedra: 0.5, Fantasma: 0, 'Aço': 0.5 },
+  Fogo: { Fogo: 0.5, 'Água': 0.5, Grama: 2, Gelo: 2, Inseto: 2, Pedra: 0.5, 'Dragão': 0.5, 'Aço': 2 },
+  'Água': { Fogo: 2, 'Água': 0.5, Grama: 0.5, Solo: 2, Pedra: 2, 'Dragão': 0.5 },
+  'Elétrico': { 'Água': 2, 'Elétrico': 0.5, Grama: 0.5, Solo: 0, Voador: 2, 'Dragão': 0.5 },
+  Grama: { Fogo: 0.5, 'Água': 2, Grama: 0.5, Venenoso: 0.5, Solo: 2, Voador: 0.5, Inseto: 0.5, Pedra: 2, 'Dragão': 0.5, 'Aço': 0.5 },
+  Gelo: { Fogo: 0.5, 'Água': 0.5, Grama: 2, Gelo: 0.5, Solo: 2, Voador: 2, 'Dragão': 2, 'Aço': 0.5 },
+  Lutador: { Normal: 2, Gelo: 2, Venenoso: 0.5, Voador: 0.5, 'Psíquico': 0.5, Inseto: 0.5, Pedra: 2, Fantasma: 0, Sombrio: 2, 'Aço': 2, Fada: 0.5 },
+  Venenoso: { Grama: 2, Venenoso: 0.5, Solo: 0.5, Pedra: 0.5, Fantasma: 0.5, 'Aço': 0, Fada: 2 },
+  Solo: { Fogo: 2, 'Elétrico': 2, Grama: 0.5, Venenoso: 2, Voador: 0, Inseto: 0.5, Pedra: 2, 'Aço': 2 },
+  Voador: { 'Elétrico': 0.5, Grama: 2, Lutador: 2, Inseto: 2, Pedra: 0.5, 'Aço': 0.5 },
+  'Psíquico': { Lutador: 2, Venenoso: 2, 'Psíquico': 0.5, Sombrio: 0, 'Aço': 0.5 },
+  Inseto: { Fogo: 0.5, Grama: 2, Lutador: 0.5, Venenoso: 0.5, Voador: 0.5, 'Psíquico': 2, Fantasma: 0.5, Sombrio: 2, 'Aço': 0.5, Fada: 0.5 },
+  Pedra: { Fogo: 2, Gelo: 2, Lutador: 0.5, Solo: 0.5, Voador: 2, Inseto: 2, 'Aço': 0.5 },
+  Fantasma: { Normal: 0, 'Psíquico': 2, Fantasma: 2, Sombrio: 0.5 },
+  'Dragão': { 'Dragão': 2, 'Aço': 0.5, Fada: 0 },
+  Sombrio: { Lutador: 0.5, 'Psíquico': 2, Fantasma: 2, Sombrio: 0.5, Fada: 0.5 },
+  'Aço': { Fogo: 0.5, 'Água': 0.5, 'Elétrico': 0.5, Gelo: 2, Pedra: 2, 'Aço': 0.5, Fada: 2 },
+  Fada: { Fogo: 0.5, Lutador: 2, Venenoso: 0.5, 'Dragão': 2, Sombrio: 2, 'Aço': 0.5 }
+};
+// damage multiplier an attack of `attack` type does to a Pokémon of types t1/t2 (abilities not included)
+function defenseMultiplier(attack, t1, t2) {
+  const row = TYPE_CHART[attack] || {};
+  return [t1, t2].filter(Boolean).reduce((mult, t) => mult * (row[t] ?? 1), 1);
+}
+const MULT_LABEL = { 0: '0', 0.25: '¼', 0.5: '½', 2: '2', 4: '4' };
+function matchupHtml(t1, t2, title = 'FRAQUEZAS E RESISTÊNCIAS') {
+  const cells = TYPE_ORDER.map(t => {
+    const m = defenseMultiplier(t, t1, t2);
+    const cls = m === 0 ? 'x0' : (m >= 4 ? 'x4' : m >= 2 ? 'x2' : m <= 0.25 ? 'x14' : m < 1 ? 'x12' : 'x1');
+    const tip = m === 1 ? 'dano normal' : (m === 0 ? 'imune' : `${MULT_LABEL[m]}× de dano`);
+    return `<div class="mu-cell" title="${t}: ${tip}"><span class="mu-type" style="--tc:${TYPE_COLORS[t]}">${TYPE_ABBR[t]}</span><span class="mu-val ${cls}">${MULT_LABEL[m] || ''}</span></div>`;
+  }).join('');
+  return `<div class="matchup-box"><div class="type-strip" style="--strip-color:var(--ink-soft)">${esc(title)}</div><div class="mu-grid">${cells}</div></div>`;
+}
+
 const NATURES = [
   {name:"Hardy", plus:null, minus:null}, {name:"Lonely", plus:"atk", minus:"def"},
   {name:"Brave", plus:"atk", minus:"spe"}, {name:"Adamant", plus:"atk", minus:"spa"},
@@ -837,6 +900,8 @@ let allMembers = [];   // GM only: one entry per trainer name {name, role, avata
 let allNpcs = [];      // GM only: {id, name, avatar}
 let myAvatar = '';
 let myTheme = null;     // own theme music ({ kind, ref, title }) or null
+let myCharacter = '';   // your character's name in this room; empty = your login name
+function myName() { return myCharacter || currentTrainer; }
 const NPC_PREFIX = 'npc:';   // NPC fichas have owner "npc:<id>"
 
 function esc(s) {
@@ -846,14 +911,14 @@ function esc(s) {
 // Every trainer in sidebar order: you, the players, owners with no member record, then NPCs.
 // `key` is what goes in a ficha's `owner`.
 function roomTrainers() {
-  const list = [{ key: currentTrainer, name: currentTrainer, kind: isGM() ? 'gm' : 'player', avatar: myAvatar, theme: myTheme }];
+  const list = [{ key: currentTrainer, name: myName(), kind: isGM() ? 'gm' : 'player', avatar: myAvatar, theme: myTheme }];
   if (!isGM()) return list;
   const seen = new Set([currentTrainer]);
   allNpcs.forEach(n => seen.add(NPC_PREFIX + n.id));
   allMembers.forEach(mb => {
     if (seen.has(mb.name)) return;
     seen.add(mb.name);
-    list.push({ key: mb.name, name: mb.name, kind: mb.role === 'gm' ? 'gm' : 'player', avatar: mb.avatar, theme: mb.theme || null });
+    list.push({ key: mb.name, name: mb.character || mb.name, kind: mb.role === 'gm' ? 'gm' : 'player', avatar: mb.avatar, theme: mb.theme || null });
   });
   allMons.forEach(m => {
     if (!m.owner || seen.has(m.owner)) return;
@@ -903,8 +968,12 @@ function imageFileToAvatar(file) {
   });
 }
 
+function updateRoleBadge() {
+  const badge = document.getElementById('wsRoleBadge');
+  badge.textContent = isGM() ? 'MESTRE · ' + myName() : 'JOGADOR · ' + myName();
+}
 function renderMeAvatar() {
-  document.getElementById('meAvatarBtn').innerHTML = avatarHtml(myAvatar, currentTrainer);
+  document.getElementById('meAvatarBtn').innerHTML = avatarHtml(myAvatar, myName());
 }
 
 // ----- Avatar / NPC modal -----
@@ -950,17 +1019,19 @@ function openAvatarModal(mode, npc, firstTime) {
   document.getElementById('avIntro').textContent = isNpc
     ? 'NPCs são treinadores controlados pelo Mestre. Os jogadores não veem as fichas deles.'
     : (firstTime
-      ? 'Escolha uma imagem pro seu treinador: é o ícone que o Mestre vai ver ao lado das suas fichas. Dá pra trocar depois clicando no seu ícone no topo da tela.'
-      : 'É o ícone que o Mestre vê ao lado das suas fichas.');
-  document.getElementById('avNameRow').hidden = !isNpc;
-  document.getElementById('avName').value = npc ? npc.name : '';
+      ? 'Monte o seu personagem nesta campanha: o nome, o ícone e a música tema que os outros vão ver. Dá pra mudar quando quiser clicando no seu ícone no topo da tela.'
+      : 'É assim que os outros te veem nesta campanha. Em outra campanha você pode ser outro personagem.');
+  document.getElementById('avNameLabel').textContent = isNpc ? 'Nome do NPC' : 'Nome do seu personagem';
+  const nameInput = document.getElementById('avName');
+  nameInput.value = isNpc ? (npc ? npc.name : '') : myCharacter;
+  nameInput.placeholder = isNpc ? 'ex: Líder Brock' : `ex: Treinador Red (vazio = "${currentTrainer}")`;
   document.getElementById('avMon').value = '';
   document.getElementById('avFile').value = '';
   document.getElementById('avDeleteBtn').hidden = !(isNpc && npc);
   document.getElementById('avCancelBtn').textContent = firstTime ? 'Agora não' : 'Cancelar';
   renderAvatarPreview();
   document.getElementById('avatarModal').hidden = false;
-  document.getElementById(isNpc ? 'avName' : 'avUploadBtn').focus();
+  nameInput.focus();
 }
 function closeAvatarModal() {
   document.getElementById('avatarModal').hidden = true;
@@ -968,7 +1039,8 @@ function closeAvatarModal() {
 }
 function renderAvatarPreview() {
   if (!avatarCtx) return;
-  const name = avatarCtx.mode === 'me' ? currentTrainer : (document.getElementById('avName').value.trim() || '?');
+  const typed = document.getElementById('avName').value.trim();
+  const name = avatarCtx.mode === 'me' ? (typed || currentTrainer) : (typed || '?');
   document.getElementById('avPreview').innerHTML = avatarHtml(avatarCtx.avatar, name);
 }
 async function saveAvatarModal() {
@@ -982,6 +1054,12 @@ async function saveAvatarModal() {
   try {
     const theme = await themePayload(c);
     if (c.mode === 'me') {
+      if (name !== myCharacter) {
+        myCharacter = (await API.call('PUT', '/me/character', { character: name })).character;
+        session.character = myCharacter;
+        saveSessionLocal(session);
+        updateRoleBadge();
+      }
       const r = await API.call('PUT', '/me/avatar', { avatar: c.avatar });
       myAvatar = r.avatar;
       if (theme !== undefined) myTheme = (await API.call('PUT', '/me/theme', { theme })).theme;
@@ -1323,18 +1401,8 @@ function renderSheet() {
     abEl.querySelector('.ability-box').addEventListener('click', () => setEditing('ability'));
   }
 
-  // Notes region
-  const notesEl = document.getElementById('notesRegion');
-  if (editingRegion === 'notes') {
-    notesEl.innerHTML = `<div class="notes-box"><div class="type-strip" style="--strip-color:var(--frame-light)">ANOTAÇÕES</div><div class="box-body"><textarea id="notesInput" placeholder="Anotações da partida, itens, lembretes...">${draft.notes || ''}</textarea></div></div>`;
-    const inp = document.getElementById('notesInput');
-    inp.addEventListener('input', (e) => { draft.notes = e.target.value; });
-    inp.addEventListener('blur', () => setEditing(null));
-    setTimeout(() => inp.focus(), 0);
-  } else {
-    notesEl.innerHTML = `<div class="notes-box"><div class="type-strip" style="--strip-color:var(--frame-light)">ANOTAÇÕES</div><div class="box-body"><div class="notes-text">${draft.notes ? draft.notes.replace(/</g,'&lt;') : '<span style="color:var(--ink-soft)">Clique pra anotar</span>'}</div></div></div>`;
-    notesEl.querySelector('.notes-box').addEventListener('click', () => setEditing('notes'));
-  }
+  // Weaknesses / resistances (where the notes used to be; `notes` is still kept in the ficha)
+  document.getElementById('matchupRegion').innerHTML = matchupHtml(draft.type1, draft.type2);
 
   renderMovesRegion();
 }
@@ -1616,20 +1684,27 @@ function battleTrainers(b) {
 }
 
 // One shape for both roles: bottom = the viewer's side (side A for the GM), top = the other.
+// A Pokémon as this battle sees it: once the battle ended, the HP/stages it finished with
+// (the fichas themselves were healed for the next battle).
+function battleMon(b, id) {
+  const m = monById(id);
+  const snap = b.status === 'ended' ? (isGM() ? b.final : b.mine && b.mine.final) : null;
+  return m && snap && snap[id] ? { ...m, battle: snap[id] } : m;
+}
 function battleView(b) {
   if (isGM()) {
     const side = s => {
-      const party = b.party[s].map(monById).filter(Boolean);
+      const party = b.party[s].map(id => battleMon(b, id)).filter(Boolean);
       return { key: s, full: true, trainer: trainerOf(b.sides[s].owner), party,
-        active: monById(b.active[s]) || party[0] || null, used: new Set(b.revealed[s]) };
+        active: party.find(m => m.id === b.active[s]) || party[0] || null, used: new Set(b.revealed[s]) };
     };
     return { control: true, bottom: side('a'), top: side('b') };
   }
   const foe = b.you === 'a' ? 'b' : 'a';
-  const party = b.mine.party.map(monById).filter(Boolean);
+  const party = b.mine.party.map(id => battleMon(b, id)).filter(Boolean);
   return {
     control: false,
-    bottom: { key: b.you, full: true, trainer: b.trainers[b.you], party, active: monById(b.mine.active) || party[0] || null, used: new Set() },
+    bottom: { key: b.you, full: true, trainer: b.trainers[b.you], party, active: party.find(m => m.id === b.mine.active) || party[0] || null, used: new Set() },
     top: { key: foe, full: false, trainer: b.trainers[foe], partySize: b.foe.partySize, activeView: b.foe.active, usedViews: b.foe.seen.filter(v => !v.active) }
   };
 }
@@ -1678,7 +1753,7 @@ function sideStripHtml(side, pos, control) {
   let balls, tiles, empty;
   if (side.full) {
     balls = ballsHtml(side.party.map(m => (curHpOf(m) <= 0 ? 'fainted' : 'ok')));
-    tiles = side.party.filter(m => m !== side.active).map(m => {
+    tiles = side.party.filter(m => !side.active || m.id !== side.active.id).map(m => {
       const max = maxHpOf(m), cur = curHpOf(m), pct = max ? (cur / max) * 100 : 0;
       const name = esc(m.nickname || m.species);
       return `<button class="bn-tile${cur <= 0 ? ' fainted' : ''}" data-switch="${esc(side.key)}:${esc(m.id)}"
@@ -1706,7 +1781,7 @@ function sideStripHtml(side, pos, control) {
   </div>`;
 }
 
-function movePanelHtml(pos, m, control, heading) {
+function movePanelHtml(pos, m, control, heading, showChart) {
   if (!m) return `<div class="bt-panel empty">Nenhum Pokémon em campo.</div>`;
   const name = esc(m.nickname || m.species);
   const moves = m.moves || [];
@@ -1747,6 +1822,7 @@ function movePanelHtml(pos, m, control, heading) {
       <button class="mini-btn heal" data-act="heal-custom" data-id="${id}">Cura</button>
     </div>` : ''}
     <div class="bt-stages">${stages}</div>
+    ${showChart ? matchupHtml(m.type1, m.type2, `Fraquezas de ${m.nickname || m.species}`) : ''}
     <div class="bt-dmg">
       ${control ? `<button class="mini-btn" data-act="reset" data-id="${id}">↺ Restaurar</button>` : ''}
       ${canEditMon(m) ? `<button class="mini-btn" data-act="sheet" data-id="${id}">Abrir ficha</button>` : ''}
@@ -1998,9 +2074,27 @@ function winnerText(b) {
 }
 let endingBattle = false;   // GM: choosing the winner
 
+// For a player, where the opponent's moves would be: the types and weaknesses of the Pokémon
+// they are facing (types are public once it's on the field; moves and stats stay hidden).
+function foePanelHtml(side) {
+  const f = side.activeView;
+  const hidden = `<div class="bp-note">Os golpes e os Status de ${esc(side.trainer.name)} ficam escondidos — como nos jogos, você só vê o que entra em campo.</div>`;
+  if (!f) return `<div class="bt-panel empty">${hidden}</div>`;
+  const name = f.nickname || f.species;
+  const types = [f.type1, f.type2].filter(Boolean)
+    .map(t => `<span class="badge" style="background:${TYPE_COLORS[t] || 'var(--panel-hi)'};color:#fff;">${esc(t)}</span>`).join('');
+  return `<div class="bt-panel">
+    <div class="bp-head">Adversário · <span>${esc(name)}</span></div>
+    <div class="bp-types">${types}</div>
+    ${matchupHtml(f.type1, f.type2, `Fraquezas de ${name}`)}
+    ${hidden}
+  </div>`;
+}
+
 function renderArena(b) {
   const root = document.getElementById('battleArena');
   const v = battleView(b), names = battleTrainers(b);
+  const ctl = v.control && b.status === 'active';   // an ended battle is a record: no HP/stage/switch controls
   const bottom = v.bottom.active;
   const top = v.top.full ? v.top.active : v.top.activeView;
   const topInfo = top && (v.top.full ? fieldInfo(top) : fieldInfoFromView(top));
@@ -2020,7 +2114,7 @@ function renderArena(b) {
   } else {
     if (b.status === 'ended') tools += `<button class="mini-btn art-btn" data-bt="art">🏆 Arte da batalha</button>`;
     if (v.control) tools += `
-      <button class="mini-btn" data-bt="restore">Restaurar times</button>
+      ${b.status === 'ended' ? '' : '<button class="mini-btn" data-bt="restore">Restaurar times</button>'}
       <button class="mini-btn" data-bt="${b.status === 'ended' ? 'reopen' : 'end'}">${b.status === 'ended' ? 'Reabrir' : 'Encerrar'}</button>
       <button class="mini-btn" data-bt="delete" data-id="${esc(b.id)}">Excluir</button>`;
   }
@@ -2030,18 +2124,17 @@ function renderArena(b) {
       <div class="bt-title">${esc(names.a.name)} <span class="bt-vs">VS</span> ${esc(names.b.name)}${b.status === 'ended' ? ` <span class="bl-status ended">${esc(winnerText(b))}</span>` : ''}</div>
       <div class="bt-tools">${tools}</div>
     </div>
-    ${sideStripHtml(v.top, 'top', v.control)}
+    ${sideStripHtml(v.top, 'top', ctl)}
     <div class="bt-scene">
       <div class="plat plat-foe"></div>
       <div class="plat plat-ally"></div>
       ${top ? battleSpriteHtml(top, false, 'spr spr-foe' + (topInfo.fainted ? ' fainted' : '')) + hpBoxHtml(topInfo, 'foe') : '<div class="scene-empty">Sem Pokémon em campo</div>'}
       ${bottom ? battleSpriteHtml(bottom, true, 'spr spr-ally' + (bottomInfo.fainted ? ' fainted' : '')) + hpBoxHtml(bottomInfo, 'ally') : ''}
     </div>
-    ${sideStripHtml(v.bottom, 'bottom', v.control)}
+    ${sideStripHtml(v.bottom, 'bottom', ctl)}
     <div class="bt-panels">
-      ${movePanelHtml('bottom', bottom, v.control, v.control ? v.bottom.trainer.name : 'Seu Pokémon')}
-      ${v.top.full ? movePanelHtml('top', top, v.control, v.top.trainer.name)
-        : `<div class="bt-panel empty">Os golpes e os Status de ${esc(v.top.trainer.name)} ficam escondidos — como nos jogos, você só vê o que entra em campo.</div>`}
+      ${movePanelHtml('bottom', bottom, ctl, v.control ? v.bottom.trainer.name : 'Seu Pokémon', v.control)}
+      ${v.top.full ? movePanelHtml('top', top, ctl, v.top.trainer.name, v.control) : foePanelHtml(v.top)}
     </div>
     ${battleLogHtml(b)}`;
   const log = document.getElementById('battleLog');
@@ -2054,7 +2147,7 @@ function renderBattleList() {
     const t = battleTrainers(b);
     let meta;
     if (isGM()) {
-      const standing = s => b.party[s].map(monById).filter(m => m && curHpOf(m) > 0).length;
+      const standing = s => b.party[s].map(id => battleMon(b, id)).filter(m => m && curHpOf(m) > 0).length;
       meta = `${standing('a')}/${b.party.a.length} × ${standing('b')}/${b.party.b.length} de pé`;
     } else meta = `Você é ${esc(b.trainers[b.you].name)}`;
     return `<div class="bl-card">
@@ -2273,7 +2366,7 @@ async function drawBattleArt(out, data) {
       if (imgs[i]) {
         ic.save();
         if (!mirror) { ic.translate(inner.width, 0); ic.scale(-1, 1); }   // left side looks right, toward the VS
-        ic.drawImage(imgs[i], ART_R - 40, ART_R - 42, 80, 80);
+        ic.drawImage(imgs[i], ART_R - 48, ART_R - 52);   // native 96px: no resampling, so the sprite stays sharp
         ic.restore();
       } else {
         ic.fillStyle = '#181818';
@@ -2288,15 +2381,47 @@ async function drawBattleArt(out, data) {
     });
   }
 
-  // text with a pixel outline
-  const text = (str, x, y, size, fill, outline, align = 'center', thick = 1) => {
+  // Crisp pixel text: the glyphs are rasterised on a scratch canvas, the browser's anti-aliasing is
+  // thresholded away (every pixel is fully on or off) and a hard outline is added around them.
+  // `fill` may be a function of the row (0 = top of the glyphs … 1 = baseline) for banded colours.
+  // `skew` slants it like italics, still pixel by pixel.
+  const text = (str, x, y, size, fill, outline, align = 'center', thick = 1, skew = 0) => {
     ctx.font = `${size}px "Press Start 2P"`;
-    ctx.textAlign = align;
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = outline;
-    for (let dx = -thick; dx <= thick; dx++) for (let dy = -thick; dy <= thick; dy++) if (dx || dy) ctx.fillText(str, x + dx, y + dy);
-    ctx.fillStyle = fill;
-    ctx.fillText(str, x, y);
+    const tw = Math.ceil(ctx.measureText(str).width);
+    const pad = thick + 2, w = tw + pad * 2, h = size + pad * 2 + Math.ceil(size / 4);
+    const scratch = document.createElement('canvas');
+    scratch.width = w; scratch.height = h;
+    const sc = scratch.getContext('2d');
+    sc.font = ctx.font; sc.textBaseline = 'alphabetic'; sc.fillStyle = '#000';
+    const base = pad + size;
+    sc.fillText(str, pad, base);
+    const src = sc.getImageData(0, 0, w, h).data;
+    const on = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) on[i] = src[i * 4 + 3] >= 110 ? 1 : 0;
+    const img = sc.createImageData(w, h), d = img.data;
+    const fillAt = typeof fill === 'function' ? fill : () => fill;
+    for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+      let c = null;
+      if (on[yy * w + xx]) c = fillAt((yy - (base - size)) / size);
+      else if (thick) {
+        search: for (let dy = -thick; dy <= thick; dy++) for (let dx = -thick; dx <= thick; dx++) {
+          const x2 = xx + dx, y2 = yy + dy;
+          if (x2 >= 0 && y2 >= 0 && x2 < w && y2 < h && on[y2 * w + x2]) { c = outline; break search; }
+        }
+      }
+      if (!c) continue;
+      const [r, g, bl] = hex(c), j = (yy * w + xx) * 4;
+      d[j] = r; d[j + 1] = g; d[j + 2] = bl; d[j + 3] = 255;
+    }
+    sc.putImageData(img, 0, 0);
+    const left = Math.round(align === 'center' ? x - tw / 2 - pad : align === 'right' ? x - tw - pad : x - pad);
+    const top = Math.round(y - base);
+    if (!skew) { ctx.drawImage(scratch, left, top); return; }
+    // slant row by row (a 1px-tall slice per row) so no pixel gets resampled
+    for (let row = 0; row < h; row++) {
+      const shift = Math.round(skew * (h / 2 - row));
+      ctx.drawImage(scratch, 0, row, w, 1, left + shift, top + row, w, 1);
+    }
   };
   const fitName = (name, max) => {
     for (const size of [16, 8]) {
@@ -2350,15 +2475,9 @@ async function drawBattleArt(out, data) {
     const x = Math.round(333 - (i * 26) / 140), y = 110 + i;
     ctx.fillRect(x - 1, y, 3 - (i < 12 || i > 128 ? 1 : 0), 1);
   }
-  ctx.save();
-  ctx.translate(320, 196);
-  ctx.transform(1, 0, -0.22, 1, 0, 0);
-  const grad = ctx.createLinearGradient(0, -30, 0, 0);
-  grad.addColorStop(0, '#ffe04a'); grad.addColorStop(0.45, '#ffe04a');
-  grad.addColorStop(0.45, '#f89020'); grad.addColorStop(0.75, '#f89020');
-  grad.addColorStop(0.75, '#e03020'); grad.addColorStop(1, '#e03020');
-  text('VS', 0, 0, 32, grad, '#141414', 'center', 3);
-  ctx.restore();
+  // yellow → orange → red bands, slanted like the reference
+  const vsBands = f => (f < 0.45 ? '#ffe04a' : f < 0.75 ? '#f89020' : '#e03020');
+  text('VS', 320, 196, 32, vsBands, '#141414', 'center', 3, 0.22);
   if (data.winner === 'draw') text('EMPATE', 320, 232, 16, '#ffffff', '#1c2e22', 'center', 2);
 
   out.width = ART_W * ART_SCALE; out.height = ART_H * ART_SCALE;
@@ -2374,9 +2493,21 @@ async function openBattleArt(b) {
   document.getElementById('artModal').hidden = false;
   const canvas = document.getElementById('artCanvas');
   canvas.classList.add('loading');
+  fitArtCanvas();
   try { await drawBattleArt(canvas, battleArtData(b)); }
   catch (e) { alert('Não consegui gerar a arte: ' + e.message); }
+  fitArtCanvas();
   canvas.classList.remove('loading');
+}
+// Show the art at a whole number of screen pixels per art pixel (the canvas holds 2 per art pixel),
+// so the browser never resamples it into a blur.
+function fitArtCanvas() {
+  const c = document.getElementById('artCanvas');
+  if (document.getElementById('artModal').hidden) return;
+  const dpr = window.devicePixelRatio || 1;
+  const avail = c.parentElement.clientWidth - 4;
+  const k = [4, 2, 1].find(n => (ART_W * n) / dpr <= avail);
+  c.style.width = k ? (ART_W * k) / dpr + 'px' : '100%';
 }
 function closeBattleArt() { document.getElementById('artModal').hidden = true; }
 function downloadBattleArt() {
@@ -2556,7 +2687,7 @@ function renderSidebar() {
     let html = '';
     [v.bottom, v.top].filter(s => s.full).forEach(s => {
       html += `<div class="sb-group-title">${esc(s.trainer.name)}</div>`;
-      s.party.forEach((m, i) => { html += sidebarItem(m, { slot: i + 1, field: m === s.active }); });
+      s.party.forEach((m, i) => { html += sidebarItem(m, { slot: i + 1, field: !!s.active && m.id === s.active.id }); });
     });
     sb.innerHTML = html || '<div style="font-size:0.8rem;color:var(--ink-soft);">Nenhuma ficha.</div>';
   } else {
@@ -2673,7 +2804,7 @@ function renderTeamList() {
   mine.forEach(t => {
     const div = document.createElement('div');
     div.className = 'mon-item';
-    div.innerHTML = `<div><strong>${t.name}</strong><br><span class="info">${(t.pokemonIds||[]).length}/${t.size} Pokémon${isGM() && t.owner !== currentTrainer ? ' · ' + t.owner : ''}</span></div>
+    div.innerHTML = `<div><strong>${esc(t.name)}</strong><br><span class="info">${(t.pokemonIds||[]).length}/${t.size} Pokémon${isGM() && t.owner !== currentTrainer ? ' · ' + esc(trainerOf(t.owner).name) : ''}</span></div>
       <div><button class="btn secondary small edit-btn">Editar</button><button class="btn danger small del-btn">Excluir</button></div>`;
     div.querySelector('.edit-btn').addEventListener('click', () => openTeamEditor(t));
     div.querySelector('.del-btn').addEventListener('click', async () => {
@@ -2736,6 +2867,8 @@ function applyState(st) {
   allNpcs = st.npcs || [];
   myAvatar = (st.me && st.me.avatar) || '';
   myTheme = (st.me && st.me.theme) || null;
+  myCharacter = (st.me && st.me.character) || '';
+  updateRoleBadge();
   allBattles = st.battles || [];
   renderMeAvatar();
   updateBattleNotice();
@@ -2772,7 +2905,7 @@ function showLobby() {
   document.getElementById('lobbyView').style.display = 'block';
   document.getElementById('workspaceView').style.display = 'none';
   session = null; currentRoom = null; API.token = null;
-  allMembers = []; allNpcs = []; myAvatar = ''; myTheme = null;
+  allMembers = []; allNpcs = []; myAvatar = ''; myTheme = null; myCharacter = '';
   stopMusic();
   document.getElementById('battleMusic').hidden = true;
   closeAvatarModal();
@@ -2790,7 +2923,7 @@ function renderRecentRooms() {
   sessions.forEach(sess => {
     const div = document.createElement('div');
     div.className = 'mon-item';
-    div.innerHTML = `<div><strong>${sess.roomName || sess.roomId}</strong><br><span class="info">${sess.role === 'gm' ? 'Mestre' : 'Jogador'} · ${sess.name}</span></div>
+    div.innerHTML = `<div><strong>${sess.roomName || sess.roomId}</strong><br><span class="info">${sess.role === 'gm' ? 'Mestre' : 'Jogador'} · ${esc(sess.name)}${sess.character && sess.character !== sess.name ? ' (como ' + esc(sess.character) + ')' : ''}</span></div>
       <div><button class="btn small enter-btn">Entrar</button></div>`;
     div.querySelector('.enter-btn').addEventListener('click', () => enterRoom(sess));
     list.appendChild(div);
@@ -2821,7 +2954,7 @@ async function enterRoom(sess) {
   document.getElementById('workspaceView').style.display = 'block';
   document.getElementById('wsRoomName').textContent = currentRoom.name || 'Sala';
   const badge = document.getElementById('wsRoleBadge');
-  badge.textContent = isGM() ? 'MESTRE' : 'JOGADOR · ' + currentTrainer;
+  updateRoleBadge();
   badge.className = 'role-badge' + (isGM() ? ' gm' : '');
   document.getElementById('emptyStateText').innerHTML = isGM()
     ? 'Escolha um treinador na coluna ao lado<br>pra ver os Pokémon dele.'
@@ -2836,6 +2969,10 @@ async function enterRoom(sess) {
   renderSidebar(); renderTeamList();
   schedulePoll();
   updateBattleNotice();
+  if (!myCharacter && !characterPrompted.has(session.roomId)) {
+    characterPrompted.add(session.roomId);
+    openAvatarModal('me', null, true);
+  }
   if (isGM() && (currentRoom.name || '').trim().toLowerCase() === TEST_ROOM_NAME) seedTestTrainers();
 }
 
@@ -2844,6 +2981,7 @@ async function enterRoom(sess) {
 const TEST_ROOM_NAME = 'pokebing';
 const TEST_TRAINERS = ['Azul (teste)', 'Vermelho (teste)'];
 let seedingTestTrainers = false;
+const characterPrompted = new Set();   // rooms where this page already asked for your character
 
 function pickRandom(list) { return list[Math.floor(Math.random() * list.length)]; }
 
@@ -2932,8 +3070,7 @@ async function joinRoom() {
   try {
     const r = await API.joinRoom(code, name);
     await enterRoom({ roomId: r.roomId, role: 'player', name, token: r.token, roomName: r.name });
-    // first time in the room: ask for a picture (or placeholder) to represent the trainer
-    if (session && !myAvatar) openAvatarModal('me', null, true);
+
   } catch (e) { alert(errMsg(e)); }
 }
 
@@ -2977,6 +3114,7 @@ async function init() {
   document.getElementById('bmNext').addEventListener('click', nextTheme);
   document.getElementById('bmVol').addEventListener('input', (e) => setMusicVolume(parseInt(e.target.value, 10)));
   document.getElementById('artClose').addEventListener('click', closeBattleArt);
+  window.addEventListener('resize', fitArtCanvas);
   document.getElementById('artDownload').addEventListener('click', downloadBattleArt);
   document.getElementById('artCopy').addEventListener('click', copyBattleArt);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.getElementById('artModal').hidden) closeBattleArt(); });

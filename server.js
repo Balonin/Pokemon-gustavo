@@ -68,6 +68,7 @@ if (DATABASE_URL) {
       CREATE INDEX IF NOT EXISTS idx_battles_room ON battles(room_id);
       ALTER TABLE members ADD COLUMN IF NOT EXISTS avatar TEXT NOT NULL DEFAULT '';
       ALTER TABLE members ADD COLUMN IF NOT EXISTS theme TEXT NOT NULL DEFAULT '';
+      ALTER TABLE members ADD COLUMN IF NOT EXISTS char_name TEXT NOT NULL DEFAULT '';
       ALTER TABLE npcs ADD COLUMN IF NOT EXISTS theme TEXT NOT NULL DEFAULT '';
       CREATE TABLE IF NOT EXISTS media (
         id TEXT PRIMARY KEY,
@@ -100,19 +101,19 @@ if (DATABASE_URL) {
     },
     async addMember(m) {
       await pool.query(
-        'INSERT INTO members (token, room_id, name, role, avatar, theme) VALUES ($1,$2,$3,$4,$5,$6)',
-        [m.token, m.roomId, m.name, m.role, m.avatar || '', themeText(m.theme)]
+        'INSERT INTO members (token, room_id, name, role, avatar, theme, char_name) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+        [m.token, m.roomId, m.name, m.role, m.avatar || '', themeText(m.theme), m.character || '']
       );
     },
     async getMember(token) {
       const r = await pool.query('SELECT * FROM members WHERE token = $1', [token]);
       if (!r.rows[0]) return null;
       const x = r.rows[0];
-      return { token: x.token, roomId: x.room_id, name: x.name, role: x.role, avatar: x.avatar || '', theme: parseTheme(x.theme) };
+      return { token: x.token, roomId: x.room_id, name: x.name, role: x.role, avatar: x.avatar || '', theme: parseTheme(x.theme), character: x.char_name || '' };
     },
     async listMembers(roomId) {
-      const r = await pool.query('SELECT name, role, avatar, theme FROM members WHERE room_id = $1 ORDER BY created_at', [roomId]);
-      return r.rows.map(x => ({ ...x, theme: parseTheme(x.theme) }));
+      const r = await pool.query('SELECT name, role, avatar, theme, char_name FROM members WHERE room_id = $1 ORDER BY created_at', [roomId]);
+      return r.rows.map(x => ({ name: x.name, role: x.role, avatar: x.avatar, theme: parseTheme(x.theme), character: x.char_name || '' }));
     },
     /* the same person may hold several tokens (one per device): keep the avatar in sync on all of them */
     async setMemberAvatar(roomId, name, avatar) {
@@ -120,6 +121,9 @@ if (DATABASE_URL) {
     },
     async setMemberTheme(roomId, name, theme) {
       await pool.query('UPDATE members SET theme = $3 WHERE room_id = $1 AND name = $2', [roomId, name, themeText(theme)]);
+    },
+    async setMemberCharacter(roomId, name, character) {
+      await pool.query('UPDATE members SET char_name = $3 WHERE room_id = $1 AND name = $2', [roomId, name, character]);
     },
     async listNpcs(roomId) {
       const r = await pool.query('SELECT id, name, avatar, theme FROM npcs WHERE room_id = $1 ORDER BY created_at', [roomId]);
@@ -219,17 +223,20 @@ if (DATABASE_URL) {
   store = {
     async createRoom(room) { mem.rooms[room.id] = room; },
     async getRoom(id) { return mem.rooms[id] || null; },
-    async addMember(m) { mem.members[m.token] = { avatar: '', theme: null, ...m }; },
+    async addMember(m) { mem.members[m.token] = { avatar: '', theme: null, character: '', ...m }; },
     async getMember(token) { return mem.members[token] || null; },
     async listMembers(roomId) {
       return Object.values(mem.members).filter(m => m.roomId === roomId)
-        .map(m => ({ name: m.name, role: m.role, avatar: m.avatar || '', theme: m.theme || null }));
+        .map(m => ({ name: m.name, role: m.role, avatar: m.avatar || '', theme: m.theme || null, character: m.character || '' }));
     },
     async setMemberAvatar(roomId, name, avatar) {
       Object.values(mem.members).forEach(m => { if (m.roomId === roomId && m.name === name) m.avatar = avatar; });
     },
     async setMemberTheme(roomId, name, theme) {
       Object.values(mem.members).forEach(m => { if (m.roomId === roomId && m.name === name) m.theme = theme; });
+    },
+    async setMemberCharacter(roomId, name, character) {
+      Object.values(mem.members).forEach(m => { if (m.roomId === roomId && m.name === name) m.character = character; });
     },
     async listNpcs(roomId) {
       return Object.values(mem.npcs).filter(n => n.roomId === roomId)
@@ -411,10 +418,11 @@ function uniqueMembers(rows) {
   const byName = new Map();
   rows.forEach(r => {
     const cur = byName.get(r.name);
-    if (!cur) { byName.set(r.name, { name: r.name, role: r.role, avatar: r.avatar || '', theme: r.theme || null }); return; }
+    if (!cur) { byName.set(r.name, { name: r.name, role: r.role, avatar: r.avatar || '', theme: r.theme || null, character: r.character || '' }); return; }
     if (r.role === 'gm') cur.role = 'gm';
     if (!cur.avatar && r.avatar) cur.avatar = r.avatar;
     if (!cur.theme && r.theme) cur.theme = r.theme;
+    if (!cur.character && r.character) cur.character = r.character;
   });
   return [...byName.values()];
 }
@@ -447,7 +455,7 @@ function fieldView(p) {
 }
 async function trainerInfo(roomId) {
   const info = {};
-  uniqueMembers(await store.listMembers(roomId)).forEach(x => { info[x.name] = { name: x.name, avatar: x.avatar, theme: x.theme || null }; });
+  uniqueMembers(await store.listMembers(roomId)).forEach(x => { info[x.name] = { name: x.character || x.name, avatar: x.avatar, theme: x.theme || null }; });
   (await store.listNpcs(roomId)).forEach(n => { info[npcOwner(n.id)] = { name: n.name, avatar: n.avatar || '', theme: n.theme || null }; });
   return info;
 }
@@ -499,13 +507,21 @@ function logForPlayer(b, you, byId) {
 function playerBattleView(b, me, roomMons, info) {
   const you = b.sides.a.owner === me ? 'a' : 'b';
   const foe = otherSide(you);
-  const byId = id => roomMons.find(p => p.id === id);
+  // an ended battle shows how it finished, not the (already healed) current HP
+  const final = b.status === 'ended' && b.final ? b.final : null;
+  const byId = id => {
+    const p = roomMons.find(x => x.id === id);
+    return p && final && final[id] ? { ...p, battle: final[id] } : p;
+  };
   const foeParty = b.party[foe].map(byId).filter(Boolean);
   const foeActive = byId(b.active[foe]);
   return {
     id: b.id, name: b.name, status: b.status, winner: b.winner || null, createdAt: b.createdAt, endedAt: b.endedAt, you,
     trainers: { a: info[b.sides.a.owner] || { name: '—', avatar: '' }, b: info[b.sides.b.owner] || { name: '—', avatar: '' } },
-    mine: { party: b.party[you].filter(id => byId(id)), active: b.active[you], used: b.revealed[you].filter(id => byId(id)) },
+    mine: {
+      party: b.party[you].filter(id => byId(id)), active: b.active[you], used: b.revealed[you].filter(id => byId(id)),
+      final: final ? Object.fromEntries(b.party[you].filter(id => final[id]).map(id => [id, final[id]])) : null
+    },
     foe: {
       partySize: foeParty.length,
       active: foeActive ? fieldView(foeActive) : null,
@@ -579,7 +595,7 @@ app.post('/api/rooms/:id/join', async (req, res) => {
     const same = uniqueMembers(await store.listMembers(roomId)).find(x => x.name === name);
     const avatar = same ? same.avatar : '';
     const t = token();
-    await store.addMember({ token: t, roomId, name, role: 'player', avatar, theme: same ? same.theme : null });
+    await store.addMember({ token: t, roomId, name, role: 'player', avatar, theme: same ? same.theme : null, character: same ? same.character : '' });
     res.json({ roomId, name: room.name, token: t, role: 'player', avatar });
   } catch (e) {
     console.error(e); res.status(500).json({ error: 'erro_interno' });
@@ -607,7 +623,7 @@ app.get('/api/state', auth, async (req, res) => {
     const npcs = isGM(m) ? await store.listNpcs(m.roomId) : [];
     res.json({
       room: { id: room.id, name: room.name, gmName: room.gmName },
-      me: { name: m.name, role: m.role, avatar: m.avatar || '', theme: m.theme || null },
+      me: { name: m.name, role: m.role, avatar: m.avatar || '', theme: m.theme || null, character: m.character || '' },
       members, npcs, pokemon, teams, battles
     });
   } catch (e) {
@@ -660,6 +676,17 @@ app.get('/media/:id', async (req, res) => {
     res.end(buf);
   } catch (e) {
     console.error(e); res.status(500).end();
+  }
+});
+
+/* the name of your character in this campaign (what the others see); empty = your own name */
+app.put('/api/me/character', auth, async (req, res) => {
+  try {
+    const character = String(req.body.character || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 40);
+    await store.setMemberCharacter(req.member.roomId, req.member.name, character);
+    res.json({ ok: true, character });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'erro_interno' });
   }
 });
 
@@ -827,6 +854,21 @@ app.delete('/api/pokemon/:id', auth, async (req, res) => {
 /* ------------------------------------------------------------------ */
 /* Battle rooms (GM only; players read their view through /api/state)  */
 /* ------------------------------------------------------------------ */
+// Pokémon still fighting in some other running battle are left alone when one battle ends/reopens.
+async function monsInOtherActiveBattles(roomId, battleId) {
+  const busy = new Set();
+  (await store.listBattles(roomId))
+    .filter(x => x.id !== battleId && x.status === 'active')
+    .forEach(x => [...x.party.a, ...x.party.b].forEach(monId => busy.add(monId)));
+  return busy;
+}
+async function setMonBattle(p, roomId, battle) {
+  const { id, owner, roomId: _r, ...data } = p;
+  data.battle = battle;
+  data.updatedAt = new Date().toISOString();
+  await store.upsertPokemon(id, roomId, owner, data);
+}
+
 async function loadOwnBattle(req, res) {
   if (!isGM(req.member)) { res.status(403).json({ error: 'so_mestre' }); return null; }
   const b = await store.getBattle(req.params.id);
@@ -891,10 +933,29 @@ app.patch('/api/battles/:id', auth, async (req, res) => {
       const winner = body.winner === undefined ? null : body.winner;
       if (![null, 'a', 'b', 'draw'].includes(winner)) return res.status(400).json({ error: 'vencedor_invalido' });
       if (body.status === 'ended' && data.status !== 'ended') {
+        // keep how every Pokémon ended this battle, then heal them for the next one
+        const mons = await store.listPokemon(roomId);
+        const busy = await monsInOtherActiveBattles(roomId, id);
+        data.final = {};
+        for (const monId of [...data.party.a, ...data.party.b]) {
+          const p = mons.find(x => x.id === monId);
+          if (!p) continue;
+          data.final[monId] = p.battle ? JSON.parse(JSON.stringify(p.battle)) : {};
+          if (!busy.has(monId)) await setMonBattle(p, roomId, p.battle && p.battle.maxHp ? { maxHp: p.battle.maxHp } : {});
+        }
         Object.assign(data, { status: 'ended', winner, endedAt: new Date().toISOString() });
         pushLog(data, { k: 'end', winner });
       } else if (body.status === 'active' && data.status === 'ended') {
-        Object.assign(data, { status: 'active', winner: null, endedAt: null });
+        // reopening picks up where it stopped
+        if (data.final) {
+          const mons = await store.listPokemon(roomId);
+          const busy = await monsInOtherActiveBattles(roomId, id);
+          for (const [monId, state] of Object.entries(data.final)) {
+            const p = mons.find(x => x.id === monId);
+            if (p && !busy.has(monId)) await setMonBattle(p, roomId, state);
+          }
+        }
+        Object.assign(data, { status: 'active', winner: null, endedAt: null, final: null });
         pushLog(data, { k: 'reopen' });
       }
     }
