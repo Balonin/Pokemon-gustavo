@@ -39,6 +39,21 @@ Os Status são HP, ATK, DEF, SPA, SPD, SPE.
   Status** (inclusive HP), com o arredondamento do crítico (`roundStatus`), e o teto vira **95** (HP
   segue sem teto). Ex.: 90 → 90 + 9 = 99 → 95; 85 → 85 + 8 = 93. Tudo em `finalStatsFor`
   (`megaFormOf(m)` diz se está ativa)
+- **Status extra (homebrew)**: `bonus` da ficha = `{ hp, atk, … }` (inteiros −99…99, só os ≠ 0; `cleanBonus`
+  no servidor). Soma em `finalStatsFor` **antes do teto de 90** (HP sem teto; a Mega vem depois), então
+  entra em tudo que usa Status: HP máximo, margem de crítico, estágios, batalha. Só o Mestre dá ou tira
+  (botão "✚ Extra" no topo da ficha, que só ele vê; salva com "Salvar Ficha"); salvar como jogador mantém
+  o `bonus` que está lá. O dono **vê os totais, sem marcação**; o Mestre vê marcas discretas em lilás
+  (`bonus-mark` na ficha, `bonus-sup` na arena) com o quanto soma de fato (`bonusEffectOf`, "+0" se o teto
+  comeu). Elementos `gm-only` ficam fora do "Copiar imagem" (`ignoreElements` do html2canvas)
+- **Imagem personalizada da ficha**: botão 🖼 na moldura da arte → janela com o mesmo enquadramento do
+  avatar (o editor `#avCrop` é um só e muda de lugar: `openCrop(img, state, opts)` com `AVATAR_CROP` /
+  `MON_ART_CROP`), saindo em 320×320. Fica pendente no rascunho (`{ data, pixel }`) e sobe ao salvar a
+  ficha: vira arquivo na tabela `media` (`POST /api/media` aceita webp/png/jpeg até 2 MB, nunca SVG) e a
+  ficha guarda só `customArt = { id, pixel }` (`cleanCustomArt`). Jogador só usa imagem que ele enviou;
+  trocar, tirar ou excluir a ficha apaga o arquivo antigo (`releaseArt`). Aparece **só na ficha e na
+  arte de fim de batalha** (`customArtOf`; vai como `art` no `seen` da visão pública pra arte do jogador/
+  espectador); a arena continua com o sprite oficial. Mega oficial ativa mostra o sprite da Mega
 - **HP em batalha** = Status de HP × 2
 - **Margem de crítico** = 10% do Status (mesmo arredondamento)
 - **Estágios de Status**: cada estágio vale 10% do Status original, limite de ±6.

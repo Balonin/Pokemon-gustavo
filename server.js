@@ -383,6 +383,8 @@ function cleanAvatar(raw) {
 /* Embeds are always built from these parts, never from a pasted URL. */
 /* ------------------------------------------------------------------ */
 const MEDIA_MAX = 8 * 1024 * 1024;
+const IMAGE_MIMES = ['image/webp', 'image/png', 'image/jpeg'];
+const IMAGE_MAX = 2 * 1024 * 1024;   // the client sends a framed 320×320 picture, far smaller than this
 function parseTheme(text) {
   if (!text) return null;
   try { return typeof text === 'string' ? JSON.parse(text) : text; } catch (e) { return null; }
@@ -642,7 +644,8 @@ function publicSideView(b, s, byId) {
     // every Pokémon of theirs that has been on the field, in order of appearance
     seen: b.revealed[s].map(byId).filter(Boolean).map(p => ({
       species: p.species, nickname: p.nickname || '', level: p.level, shiny: !!p.shiny, megaActive: megaActiveOf(p),
-      fainted: hpPct(p) === 0, active: p.id === b.active[s]
+      fainted: hpPct(p) === 0, active: p.id === b.active[s],
+      art: p.customArt || null   // for the end-of-battle art only (the arena keeps the official sprite)
     }))
   };
 }
@@ -696,14 +699,37 @@ function cleanMegaSheet(x) {
   };
 }
 
+/* Homebrew extra Status the GM gives a Pokémon: { hp, atk, … } whole numbers (−99…99), zeros dropped;
+   null when there's none. Added before the cap of 90 (the frontend's finalStatsFor). Only the GM sets it. */
+const STAT_KEYS = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
+function cleanBonus(x) {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) return null;
+  const out = {};
+  STAT_KEYS.forEach(k => {
+    const v = Math.max(-99, Math.min(99, parseInt(x[k], 10) || 0));
+    if (v) out[k] = v;
+  });
+  return Object.keys(out).length ? out : null;
+}
+
+/* A ficha's custom picture: { id: <media id>, pixel } (pixel art is shown without smoothing) or null.
+   Shown on the sheet and in the end-of-battle art; the battle itself keeps the official sprite. */
+function cleanCustomArt(x) {
+  if (!x || typeof x !== 'object' || !/^[0-9a-f]{20}$/.test(String(x.id || ''))) return null;
+  return { id: x.id, pixel: !!x.pixel };
+}
+async function releaseArt(p) { if (p && p.customArt && p.customArt.id) await store.deleteMedia(p.customArt.id); }
+
 /* strip fields the client must not control */
 function cleanMonData(body) {
   const allowed = ['species','nickname','type1','type2','level','natureName','natureUp','natureDown',
     'base100','stage','maxStage','committed','legendary','distributed','ability','notes','moves','shiny',
-    'order','battle','teraType','mega','megaBase','megaSheet'];
+    'order','battle','teraType','mega','megaBase','megaSheet','bonus','customArt'];
   const out = {};
   allowed.forEach(k => { if (body[k] !== undefined) out[k] = body[k]; });
   if (out.megaSheet !== undefined) out.megaSheet = cleanMegaSheet(out.megaSheet);
+  if (out.bonus !== undefined) out.bonus = cleanBonus(out.bonus);
+  if (out.customArt !== undefined) out.customArt = cleanCustomArt(out.customArt);
   out.updatedAt = new Date().toISOString();
   return out;
 }
@@ -801,7 +827,9 @@ app.delete('/api/members/:name', auth, async (req, res) => {
       for (const b of await store.listBattles(m.roomId)) {
         if (SIDES.some(s => b.sides[s].owner === name)) await store.deleteBattle(b.id);
       }
-      for (const p of await store.listPokemon(m.roomId)) if (p.owner === name) await store.deletePokemon(p.id);
+      for (const p of await store.listPokemon(m.roomId)) {
+        if (p.owner === name) { await store.deletePokemon(p.id); await releaseArt(p); }   // a GM-uploaded picture isn't his
+      }
       for (const t of await store.listTeams(m.roomId)) if (t.owner === name) await store.deleteTeam(t.id);
       await store.deleteMediaOf(m.roomId, name);
     } else {
@@ -878,8 +906,10 @@ app.put('/api/me/avatar', auth, async (req, res) => {
 app.post('/api/media', express.raw({ type: () => true, limit: MEDIA_MAX }), auth, async (req, res) => {
   try {
     const mime = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase();
-    if (!/^audio\/[a-z0-9.+-]+$/.test(mime)) return res.status(400).json({ error: 'arquivo_invalido' });
+    const image = IMAGE_MIMES.includes(mime);   // a ficha's custom picture (raster only: no SVG)
+    if (!image && !/^audio\/[a-z0-9.+-]+$/.test(mime)) return res.status(400).json({ error: 'arquivo_invalido' });
     if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'arquivo_invalido' });
+    if (image && req.body.length > IMAGE_MAX) return res.status(413).json({ error: 'http_413' });
     const f = { id: uid(), roomId: req.member.roomId, owner: req.member.name, mime, data: req.body };
     await store.putMedia(f);
     res.json({ id: f.id });
@@ -992,7 +1022,9 @@ app.delete('/api/npcs/:id', auth, async (req, res) => {
     for (const b of await store.listBattles(m.roomId)) {
       if (SIDES.some(s => b.sides[s].owner === owner)) await store.deleteBattle(b.id);
     }
+    const arts = (await store.listPokemon(m.roomId)).filter(p => p.owner === owner && p.customArt);
     await store.deleteNpc(npc.id, owner);
+    for (const p of arts) await releaseArt(p);
     await releaseTheme(npc.theme, null);
     res.json({ ok: true });
   } catch (e) {
@@ -1025,8 +1057,24 @@ app.post('/api/pokemon', auth, async (req, res) => {
     if (!isGM(m) || data.battle === undefined) {
       if (existing && existing.battle !== undefined) data.battle = existing.battle; else delete data.battle;
     }
+    // the extra Status too: only the GM gives or takes them; a player's save keeps what is there
+    if (!isGM(m) || data.bonus === undefined) {
+      if (existing && existing.bonus) data.bonus = existing.bonus; else delete data.bonus;
+    }
     if (data.order === undefined && existing && existing.order !== undefined) data.order = existing.order;
+    // custom picture: a media file of this room (for a player, one they uploaded themself); an unchanged
+    // one is kept as is, and replacing or removing it deletes the old file
+    const oldArt = existing && existing.customArt ? existing.customArt.id : null;
+    if (data.customArt === undefined) {
+      if (oldArt) data.customArt = existing.customArt;
+    } else if (data.customArt && data.customArt.id !== oldArt) {
+      const f = await store.getMediaInfo(data.customArt.id);
+      if (!f || f.roomId !== m.roomId || !IMAGE_MIMES.includes(f.mime) || (!isGM(m) && f.owner !== m.name)) {
+        return res.status(400).json({ error: 'imagem_invalida' });
+      }
+    }
     await store.upsertPokemon(id, m.roomId, owner, data);
+    if (oldArt && (!data.customArt || data.customArt.id !== oldArt)) await store.deleteMedia(oldArt);
     res.json({ id, owner });
   } catch (e) {
     console.error(e); res.status(500).json({ error: 'erro_interno' });
@@ -1075,6 +1123,7 @@ app.delete('/api/pokemon/:id', auth, async (req, res) => {
     if (p.roomId !== m.roomId) return res.status(403).json({ error: 'outra_sala' });
     if (!isGM(m) && p.owner !== m.name) return res.status(403).json({ error: 'nao_e_seu' });
     await store.deletePokemon(req.params.id);
+    await releaseArt(p);
     res.json({ ok: true });
   } catch (e) {
     console.error(e); res.status(500).json({ error: 'erro_interno' });

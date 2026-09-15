@@ -214,6 +214,26 @@ body.in-room { max-width: none; padding: 12px; }
 .stat-box .value { font-family: var(--font-pixel); font-size: 1.24rem; line-height: 1.6; color: #fff; text-shadow: 1px 1px 0 var(--outline); }
 .stat-box .dist-note { font-size: 0.779rem; color: var(--gold); height: 13px; visibility: hidden; }
 .stat-box .dist-note.visible { visibility: visible; }
+/* homebrew extra Status: GM only, small and quiet (top-left corner; the crit margin is top-right) */
+.stat-box .bonus-mark { position: absolute; top: 9px; left: 10px; font-family: var(--font-pixel); font-size: 0.5rem; color: #b89ae8; opacity: 0.85; }
+.stat-box .bonus-mark.neg, .bonus-sup.neg { color: #e89a9a; }
+.bonus-sup { margin-left: 3px; font-size: 0.44rem; vertical-align: super; color: #b89ae8; }
+.bonus-btn[hidden] { display: none; }   /* players never see it */
+.bonus-btn.has { --edge: #8a6ac8; color: #d4c0f4; }
+.bonus-btn.open { --fill: #2e2440; }
+.bonus-pop { position: absolute; inset: 0; z-index: 7; display: flex; flex-direction: column; border: 2px solid #6a5a8a; background: var(--panel-deep); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.55); }
+.bonus-pop[hidden] { display: none; }
+.bonus-pop .nature-pop-head { color: #d4c0f4; }
+.bonus-rows { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; }
+.bonus-row { display: flex; align-items: center; gap: 6px; }
+.bonus-row .mini-btn { padding: 4px 9px; }
+.bonus-l { width: 36px; font-family: var(--font-pixel); font-size: 0.56rem; color: var(--ink-soft); }
+.bonus-v { min-width: 36px; text-align: center; font-family: var(--font-pixel); font-size: 0.66rem; color: var(--ink-soft); }
+.bonus-v.on { color: #d4c0f4; }
+.bonus-t { margin-left: auto; font-family: var(--font-pixel); font-size: 0.6rem; color: #fff; white-space: nowrap; }
+.bonus-t i { font-style: normal; font-size: 0.44rem; color: var(--gold); }
+.bonus-foot { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-top: 2px solid var(--panel-hi); font-size: 0.66rem; line-height: 1.4; color: var(--ink-soft); }
+.bonus-foot .mini-btn { margin-left: auto; flex-shrink: 0; }
 .stat-box .crit-corner { position: absolute; top: 9px; right: 10px; border: 2px solid var(--outline); font-size: 0.684rem; padding: 3px 5px; min-width: 24px; color: var(--gold); background: var(--panel-deep); font-family: var(--font-pixel); }
 .stat-stepper { position: absolute; left: 0; right: 0; bottom: 9px; display: flex; align-items: center; justify-content: center; gap: 5px; height: 22px; visibility: hidden; }
 .stat-stepper.visible { visibility: visible; }
@@ -800,6 +820,15 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
 .avatar-opts { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .avatar-opts label { margin: 2px 0 0; }
 @media (max-width: 420px) { .avatar-editor { flex-direction: column; align-items: center; } .avatar-opts { width: 100%; } }
+/* a ficha's custom picture */
+.shiny-btn.pic-btn { right: auto; left: 8px; font-size: 0.8rem; }
+.shiny-btn[hidden] { display: none; }
+.shiny-btn.pic-btn.active { --edge: #6a9ae8; --fill: #1e2a44; }
+.art-frame img.custom-art.smooth { image-rendering: auto; }
+.ma-preview { width: 128px; height: 128px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; border: 2px solid var(--outline); background: var(--panel-hi); }
+.ma-preview img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; }
+.ma-preview img.smooth { image-rendering: auto; }
+.ma-note { font-size: 0.72rem; line-height: 1.45; color: var(--ink-soft); }
 .av-crop { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; margin-top: 12px; }
 .av-crop[hidden], .avatar-editor[hidden] { display: none; }
 .crop-stage {
@@ -888,6 +917,7 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
     <div class="sheet-topbar">
       <div class="sheet-tabs" id="sheetTabs" hidden></div>
       <div class="sheet-owner" id="sheetOwner"></div>
+      <button class="btn secondary small bonus-btn" id="bonusBtn" title="Status extra (homebrew) — só o Mestre vê este botão" hidden>✚ Extra</button>
       <button class="btn secondary small" id="copyImageBtn">📋 Copiar imagem</button>
       <button class="btn secondary small" id="sheetCloseBtn">✕ Fechar</button>
     </div>
@@ -897,6 +927,7 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
         <div class="stats-grid" id="statsGrid"></div>
         <div id="hpBar" class="hp-bar"></div>
         <div id="natureRegion"></div>
+        <div class="bonus-pop gm-only" id="bonusPop" hidden></div>
       </div>
       <div class="col-moves">
         <div id="abilityRegion" class="ability-slot"></div>
@@ -908,6 +939,7 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
           <div class="art-frame-wrap">
             <div class="art-frame" id="artFrame"></div>
             <button class="shiny-btn" id="shinyBtn" title="Alternar shiny">✦</button>
+            <button class="shiny-btn pic-btn no-capture" id="monArtBtn" title="Imagem personalizada (ficha e arte de fim de batalha)">🖼</button>
           </div>
         </div>
         <div class="type-badges-center" id="typeBadges"></div>
@@ -987,8 +1019,9 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
         <button class="btn secondary small" id="avPlaceholderBtn">Usar placeholder</button>
       </div>
     </div>
-    <!-- framing an uploaded picture: the square is exactly what becomes the avatar -->
-    <div class="av-crop" id="avCrop" hidden>
+    <!-- framing an uploaded picture: the square is exactly what becomes the avatar (the same editor
+         moves into the ficha's picture window when used there) -->
+    <div id="avCropHost"><div class="av-crop" id="avCrop" hidden>
       <canvas class="crop-stage" id="cropCanvas" tabindex="0" aria-label="Enquadrar a imagem: arraste pra mover, roda do mouse pra zoom"></canvas>
       <div class="crop-side">
         <div class="crop-l">Como vai ficar</div>
@@ -1009,7 +1042,7 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
           <button class="btn small" id="cropOk">Usar imagem</button>
         </div>
       </div>
-    </div>
+    </div></div>
     <div class="theme-box">
       <label for="thLink">Música tema</label>
       <div class="theme-now" id="thNow"></div>
@@ -1061,6 +1094,29 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
     </div>
     <div class="top-actions" style="margin:14px 0 0;">
       <button class="btn secondary small" id="rmCloseBtn">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== A FICHA'S CUSTOM PICTURE ===== -->
+<div class="modal-backdrop" id="monArtModal" hidden>
+  <div class="card modal" role="dialog" aria-modal="true" aria-labelledby="maTitle">
+    <h2 id="maTitle">Imagem do Pokémon</h2>
+    <div class="sub" style="margin:10px 0 0;">Aparece na ficha e na arte de fim de batalha. Na batalha continua o sprite oficial.</div>
+    <div class="avatar-editor" id="maEditor">
+      <div class="ma-preview" id="maPreview"></div>
+      <div class="avatar-opts">
+        <button class="btn secondary small" id="maUploadBtn">📁 Enviar imagem</button>
+        <button class="btn secondary small" id="maRecropBtn" hidden>✂ Ajustar enquadramento</button>
+        <input type="file" id="maFile" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+        <button class="btn secondary small" id="maOfficialBtn">Usar o sprite oficial</button>
+        <div class="ma-note" id="maNote"></div>
+      </div>
+    </div>
+    <div id="maCropHost"></div>
+    <div class="top-actions" style="margin:16px 0 0;">
+      <button class="btn secondary small" id="maCancelBtn">Cancelar</button>
+      <button class="btn small" id="maOkBtn">Pronto</button>
     </div>
   </div>
 </div>
@@ -1314,6 +1370,16 @@ function spriteIdOf(m) {
   if (opt && opt.id) return opt.id;
   return (DEX_BY_NAME[(m.species || '').toLowerCase()] || {}).id;
 }
+// A ficha's custom picture (`customArt` = { id, pixel }; `{ data, pixel }` while not saved yet; `art` in the
+// opponent's field view). Only the sheet and the end-of-battle art use it — the arena keeps the official
+// sprite. An official Mega with its own sprite shows that sprite instead (Battle Bound keeps the picture).
+function customArtOf(m) {
+  const a = m && (m.customArt || m.art);
+  if (!a || !(a.data || a.id)) return null;
+  const form = megaFormOf(m);
+  if (form && form !== BATTLE_BOUND && (megaOption(m.species, form) || {}).id) return null;
+  return { url: a.data || '/media/' + encodeURIComponent(a.id), pixel: !!a.pixel };
+}
 // Fichas saved while picking a Mega still switched on its types/ability (with the originals in
 // `megaBase`): read them back in their base form.
 function withoutLegacyMega(p) {
@@ -1508,35 +1574,43 @@ function loadImageFile(file) {
 }
 
 // ----- Framing an uploaded picture -----
-// The square on screen is exactly what becomes the 96×96 avatar: drag to move it, zoom with the slider,
+// The square on screen is exactly what becomes the picture: drag to move it, zoom with the slider,
 // the mouse wheel or a pinch. The picture always covers the square (no empty borders). Small pixel art
 // is scaled without smoothing so it stays crisp; photos are smoothed.
-const AVATAR_SIZE = 96;
-let crop = null;   // { img, w, h, s (screen px per picture px), x, y (picture's corner on the square), min, max, pointers }
+// One editor (#avCrop) serves the trainer's avatar and the ficha's picture: `opts` says where it shows
+// (host), what it replaces meanwhile (hide), the size it makes and what to do with the result.
+let crop = null;   // { img, w, h, s (screen px per picture px), x, y (picture's corner on the square), min, max, pointers, opts }
 const cropCanvas = () => document.getElementById('cropCanvas');
-function cropSmooth() { return Math.min(crop.w, crop.h) >= AVATAR_SIZE; }
+function cropSmooth() { return Math.min(crop.w, crop.h) >= crop.opts.size; }
+const AVATAR_CROP = {
+  size: 96, host: 'avCropHost', hide: 'avEditor',
+  onApply: (data, state) => { if (!avatarCtx) return; avatarCtx.avatar = data; avatarCtx.crop = state; renderAvatarPreview(); }
+};
 
-function openCrop(img, state) {
+function openCrop(img, state, opts) {
+  const box = document.getElementById('avCrop');
+  document.getElementById(opts.host).appendChild(box);
+  if (crop && crop.opts.hide !== opts.hide) document.getElementById(crop.opts.hide).hidden = false;
   const cv = cropCanvas();
   const S = Math.round(260 * Math.min(2, window.devicePixelRatio || 1));   // sharp on high-density screens
   cv.width = cv.height = S;
   const w = img.naturalWidth, h = img.naturalHeight;
   const min = S / Math.min(w, h);                              // the picture's short side fills the square
   const max = Math.max(min, Math.min(min * 10, S / 8));        // up to 10×, but always at least 8 picture px across
-  crop = { img, w, h, min, max, pointers: new Map(), s: min, x: (S - w * min) / 2, y: (S - h * min) / 2 };
+  crop = { img, w, h, min, max, pointers: new Map(), s: min, x: (S - w * min) / 2, y: (S - h * min) / 2, opts };
   if (state && state.S) {   // re-framing: same framing as before, in this square's pixels
     const k = S / state.S;
     Object.assign(crop, { s: state.s * k, x: state.x * k, y: state.y * k });
   }
-  document.getElementById('avEditor').hidden = true;
-  document.getElementById('avCrop').hidden = false;
+  document.getElementById(opts.hide).hidden = true;
+  box.hidden = false;
   clampCrop(); syncCropZoom(); drawCrop();
   cv.focus();
 }
 function closeCrop() {
+  if (crop) document.getElementById(crop.opts.hide).hidden = false;
   crop = null;
   document.getElementById('avCrop').hidden = true;
-  document.getElementById('avEditor').hidden = false;
 }
 function clampCrop() {
   const S = cropCanvas().width;
@@ -1587,20 +1661,21 @@ function renderCropTo(out) {
   g.imageSmoothingQuality = 'high';
   g.drawImage(crop.img, -crop.x / crop.s, -crop.y / crop.s, S / crop.s, S / crop.s, 0, 0, out.width, out.height);
 }
-function cropToAvatar() {
+function cropExport() {
   const c = document.createElement('canvas');
-  c.width = c.height = AVATAR_SIZE;
+  c.width = c.height = crop.opts.size;
   renderCropTo(c);
-  const data = c.toDataURL('image/webp', 0.85);
+  const data = c.toDataURL('image/webp', 0.88);
   return data.startsWith('data:image/webp') ? data : c.toDataURL('image/png');
 }
-// "Usar imagem": the avatar becomes this framing, remembered so it can be adjusted again
+// "Usar imagem": the framed picture goes to whoever opened the editor, with the framing remembered
+// so it can be adjusted again (and whether it is pixel art, drawn without smoothing)
 function applyCrop() {
-  if (!crop || !avatarCtx) return;
-  avatarCtx.avatar = cropToAvatar();
-  avatarCtx.crop = { img: crop.img, s: crop.s, x: crop.x, y: crop.y, S: cropCanvas().width };
+  if (!crop) return;
+  const data = cropExport(), opts = crop.opts;
+  const state = { img: crop.img, s: crop.s, x: crop.x, y: crop.y, S: cropCanvas().width, pixel: !cropSmooth() };
   closeCrop();
-  renderAvatarPreview();
+  opts.onApply(data, state);
 }
 function cropPoint(e) {
   const cv = cropCanvas(), r = cv.getBoundingClientRect();
@@ -1733,7 +1808,7 @@ function renderAvatarPreview() {
   document.getElementById('avRecropBtn').hidden = !(avatarCtx.crop && (avatarCtx.avatar || '').startsWith('data:image/'));
 }
 async function saveAvatarModal() {
-  if (crop) applyCrop();   // "Salvar" while framing keeps the framing on screen
+  if (crop && crop.opts === AVATAR_CROP) applyCrop();   // "Salvar" while framing keeps the framing on screen
   const c = avatarCtx;
   if (!c) return;
   const name = document.getElementById('avName').value.trim();
@@ -1782,7 +1857,7 @@ async function deleteNpcFromModal() {
 // ===== The Sheet: shared draft state =====
 let draft = null;       // the mon being edited/created
 let draftId = null;     // null = new, else existing doc id
-let editingRegion = null; // 'header' | 'stat:hp' | 'nature' | 'ability' | 'move:0' | 'move:new' | null
+let editingRegion = null; // 'header' | 'stat:hp' | 'nature' | 'bonus' | 'ability' | 'move:0' | 'move:new' | null
 let sheetMega = false;    // showing the Pokémon's Mega sheet instead of its normal one
 
 function blankDraft() {
@@ -1837,9 +1912,10 @@ function computeFixedAndPoints(mon) {
 function finalStatsFor(m) {
   const {fixed} = computeFixedAndPoints(m);
   const d = m.distributed || {};
+  const bonus = m.bonus || {};                      // homebrew extra Status from the GM: before the cap, like the rest
   const out = {};
   STAT_KEYS.forEach(k => {
-    let v = fixed[k] + (d[k] || 0);
+    let v = Math.max(1, fixed[k] + (d[k] || 0) + (bonus[k] || 0));
     if (k !== 'hp') v = Math.min(90, v);            // HP has no cap
     if (megaFormOf(m)) {                            // active Mega / Battle Bound: +10% after distribution, cap 95
       v += roundStatus(v * 0.1);
@@ -1848,6 +1924,18 @@ function finalStatsFor(m) {
     out[k] = v;
   });
   return out;
+}
+// GM: what the extra Status actually add to each stat (after the cap: +8 on an 88 only adds 2)
+function bonusEffectOf(m) {
+  if (!m || !m.bonus) return null;
+  const withB = finalStatsFor(m), without = finalStatsFor({ ...m, bonus: null }), out = {};
+  STAT_KEYS.forEach(k => { if (m.bonus[k]) out[k] = { given: m.bonus[k], adds: withB[k] - without[k], base: without[k] }; });
+  return Object.keys(out).length ? out : null;
+}
+function bonusSign(n) { return (n >= 0 ? '+' : '') + n; }
+function bonusTitle(e, k) {
+  const capped = e.adds !== e.given ? ` (vale ${bonusSign(e.adds)} por causa do ${e.given > 0 ? 'teto' : 'mínimo de 1'})` : '';
+  return `Status extra (só o Mestre vê): ${STAT_LABEL[k]} ${bonusSign(e.given)}${capped}. Sem ele: ${e.base}`;
 }
 function critMarginFor(stats) {
   const c = {};
@@ -1902,6 +1990,7 @@ function openSheet(mon, ownerKey, mega) {
   renderSidebar();
 }
 function closeSheet() {
+  if (monArtCtx) closeMonArtModal();
   document.getElementById('sheetOverlay').classList.remove('open');
   document.getElementById('sheetHost').style.display = 'none';
   draft = null; draftId = null; editingRegion = null; selectedMonId = null; sheetMega = false;
@@ -2059,9 +2148,14 @@ function renderSheet() {
   // Artwork
   const artFrame = document.getElementById('artFrame');
   const dexId = spriteIdOf(view);   // the normal sheet shows the base form; the Mega sheet, the Mega
-  const imgSrc = dexId ? spriteImg(dexId, draft.shiny) : null;
-  artFrame.innerHTML = imgSrc ? `<img src="${imgSrc}" alt=""${mega ? ' class="mega"' : ''}>` : `<span class="ph-letter">${(draft.nickname||draft.species||'?').charAt(0).toUpperCase()}</span>`;
+  const custom = customArtOf(view);   // a custom picture wins over the sprite (not over an official Mega's)
+  const imgSrc = custom ? custom.url : (dexId ? spriteImg(dexId, draft.shiny) : null);
+  const imgCls = [mega ? 'mega' : '', custom ? 'custom-art' : '', custom && !custom.pixel ? 'smooth' : ''].filter(Boolean).join(' ');
+  artFrame.innerHTML = imgSrc ? `<img src="${esc(imgSrc)}" alt=""${imgCls ? ` class="${imgCls}"` : ''}>` : `<span class="ph-letter">${(draft.nickname||draft.species||'?').charAt(0).toUpperCase()}</span>`;
   document.getElementById('shinyBtn').className = 'shiny-btn' + (draft.shiny ? ' active' : '');
+  const picBtn = document.getElementById('monArtBtn');
+  picBtn.hidden = mega;   // whoever can open a ficha can edit it (players only get their own)
+  picBtn.classList.toggle('active', !!draft.customArt);
 
   document.getElementById('typeBadges').innerHTML = [view.type1, view.type2].filter(Boolean).map(t => `<span class="badge" style="background:${TYPE_COLORS[t]||'var(--panel-alt)'};color:#fff;">${t}</span>`).join('') + teraChipHtml();
   document.getElementById('teraChip').addEventListener('click', () => setEditing('tera'));
@@ -2141,6 +2235,7 @@ function renderSheet() {
   // Stats grid
   const grid = document.getElementById('statsGrid');
   const crit = critMarginFor(fs);
+  const extra = isGM() ? bonusEffectOf(view) : null;   // the owner sees the totals, without this mark
   // two columns: HP | SPE, ATK | SPA, DEF | SPD
   grid.innerHTML = ['hp', 'spe', 'atk', 'spa', 'def', 'spd'].map(k => {
     const isEditing = !mega && editingRegion === ('stat:' + k);
@@ -2156,6 +2251,7 @@ function renderSheet() {
           ${note}
         </div>
         <div class="crit-corner">${crit[k]}</div>
+        ${extra && extra[k] ? `<div class="bonus-mark gm-only${extra[k].adds < 0 ? ' neg' : ''}" title="${esc(bonusTitle(extra[k], k))}">${bonusSign(extra[k].adds)}</div>` : ''}
         <div class="stat-stepper ${isEditing ? 'visible' : ''}" onclick="event.stopPropagation()">
           <button class="st-dec" tabindex="${isEditing ? '0' : '-1'}">−</button>
           <span class="extra">base ${fixed[k]} +${dist}</span>
@@ -2182,6 +2278,8 @@ function renderSheet() {
       renderSheet();
     });
   }
+
+  renderBonusPop(mega);
 
   const maxHp = fs.hp * 2;
   document.getElementById('hpBar').innerHTML = `<div class="hp-fill" style="width:100%"></div><span class="hp-text">HP ${maxHp}/${maxHp}</span>`;
@@ -2403,6 +2501,100 @@ function renderMovesRegion() {
   });
 }
 
+// ----- Homebrew extra Status (GM only) -----
+// "✚ Extra" in the sheet's top bar opens this over the Status column: −/+ per Status, with the total it
+// gives. Saved with "Salvar Ficha" like any other change. The owner sees the totals without any mark.
+function renderBonusPop(mega) {
+  const btn = document.getElementById('bonusBtn'), pop = document.getElementById('bonusPop');
+  const can = isGM() && !!draft && !mega;
+  btn.hidden = !can;
+  btn.classList.toggle('has', !!(draft && draft.bonus));
+  btn.classList.toggle('open', editingRegion === 'bonus');
+  pop.hidden = !(can && editingRegion === 'bonus');
+  if (pop.hidden) { pop.innerHTML = ''; return; }
+  const b = draft.bonus || {}, eff = bonusEffectOf(draft) || {}, total = finalStatsFor(draft);
+  pop.innerHTML = `
+    <div class="nature-pop-head"><span>Status extra · só você vê</span><button class="sb-tbtn" data-bonus="close" title="Fechar">✕</button></div>
+    <div class="bonus-rows">${STAT_KEYS.map(k => {
+      const v = b[k] || 0, e = eff[k];
+      return `<div class="bonus-row">
+        <span class="bonus-l">${STAT_LABEL[k]}</span>
+        <button class="mini-btn" data-bonus="dec" data-k="${k}">−</button>
+        <span class="bonus-v${v ? ' on' : ''}">${bonusSign(v)}</span>
+        <button class="mini-btn" data-bonus="inc" data-k="${k}">+</button>
+        <span class="bonus-t" title="${e ? esc(bonusTitle(e, k)) : ''}">= ${total[k]}${e && e.adds !== e.given ? ' <i>teto</i>' : ''}</span>
+      </div>`;
+    }).join('')}</div>
+    <div class="bonus-foot">
+      <span>Soma antes do teto de 90 (HP sem teto). Salva com "Salvar Ficha".</span>
+      ${draft.bonus ? '<button class="mini-btn" data-bonus="clear">Zerar</button>' : ''}
+    </div>`;
+}
+function onBonusPopClick(ev) {
+  const el = ev.target.closest('[data-bonus]');
+  if (!el || !draft) return;
+  ev.stopPropagation();
+  const act = el.dataset.bonus;
+  if (act === 'close') { setEditing(null); return; }
+  if (act === 'clear') draft.bonus = null;
+  else {
+    const k = el.dataset.k, b = { ...(draft.bonus || {}) };
+    b[k] = Math.max(-99, Math.min(99, (b[k] || 0) + (act === 'inc' ? 1 : -1)));
+    if (!b[k]) delete b[k];
+    draft.bonus = Object.keys(b).length ? b : null;
+  }
+  renderSheet();
+}
+
+// ----- A ficha's custom picture -----
+// Same flow as the trainer's avatar: send a picture, frame it (the shared crop editor), done. It stays on
+// the draft ({ data, pixel }) and is uploaded when the ficha is saved.
+const ART_SIZE = 320;
+let monArtCtx = null;   // { art: the picture being chosen (null = official sprite), crop: last framing }
+const MON_ART_CROP = {
+  size: ART_SIZE, host: 'maCropHost', hide: 'maEditor',
+  onApply: (data, state) => { if (!monArtCtx) return; monArtCtx.art = { data, pixel: state.pixel }; monArtCtx.crop = state; renderMonArtModal(); }
+};
+function openMonArtModal() {
+  if (!draft) return;
+  monArtCtx = { art: draft.customArt || null, crop: draft._artCrop || null };
+  renderMonArtModal();
+  document.getElementById('monArtModal').hidden = false;
+}
+function closeMonArtModal() {
+  if (crop && crop.opts === MON_ART_CROP) closeCrop();
+  document.getElementById('monArtModal').hidden = true;
+  monArtCtx = null;
+}
+function renderMonArtModal() {
+  if (!monArtCtx || !draft) return;
+  const custom = customArtOf({ ...draft, battle: null, customArt: monArtCtx.art });
+  const dexId = spriteIdOf({ ...draft, battle: null });
+  const src = custom ? custom.url : (dexId ? spriteImg(dexId, draft.shiny) : null);
+  document.getElementById('maPreview').innerHTML = src
+    ? `<img src="${esc(src)}" alt=""${custom && !custom.pixel ? ' class="smooth"' : ''}>` : '<span class="ph-letter">?</span>';
+  document.getElementById('maRecropBtn').hidden = !(monArtCtx.art && monArtCtx.art.data && monArtCtx.crop);
+  document.getElementById('maOfficialBtn').hidden = !monArtCtx.art;
+  document.getElementById('maNote').textContent = monArtCtx.art
+    ? (monArtCtx.art.data ? 'Imagem nova — vai junto quando você salvar a ficha.' : 'Imagem personalizada.')
+    : 'Usando o sprite oficial.';
+}
+function applyMonArt() {
+  if (crop && crop.opts === MON_ART_CROP) applyCrop();   // "Pronto" while framing keeps the framing on screen
+  if (!monArtCtx || !draft) return;
+  draft.customArt = monArtCtx.art;
+  draft._artCrop = monArtCtx.art && monArtCtx.art.data ? monArtCtx.crop : null;
+  closeMonArtModal();
+  renderSheet();
+}
+// a data: URL picture → media file on the server; returns its id
+async function uploadImageData(dataUrl) {
+  const blob = await (await fetch(dataUrl)).blob();
+  const r = await fetch('/api/media', { method: 'POST', headers: { 'Content-Type': blob.type || 'image/png', Authorization: 'Bearer ' + API.token }, body: blob });
+  if (!r.ok) { let err = {}; try { err = await r.json(); } catch (e) {} throw new Error(err.error || ('http_' + r.status)); }
+  return (await r.json()).id;
+}
+
 async function copySheetAsImage() {
   const btn = document.getElementById('copyImageBtn');
   const original = btn.textContent;
@@ -2412,7 +2604,9 @@ async function copySheetAsImage() {
     const target = document.getElementById('captureArea');
     const canvas = await html2canvas(target, {
       backgroundColor: getComputedStyle(document.querySelector('.sheet')).backgroundColor || '#ffffff',
-      scale: 2, useCORS: true
+      scale: 2, useCORS: true,
+      // the image can go to players: no GM marks, no editing buttons
+      ignoreElements: el => el.classList && (el.classList.contains('gm-only') || el.classList.contains('no-capture'))
     });
     canvas.toBlob(async (blob) => {
       try {
@@ -2446,11 +2640,17 @@ async function saveSheet() {
     legendary: draft.legendary, distributed: draft.distributed, ability: draft.ability, notes: draft.notes || '',
     moves: (draft.moves || []).map(m => ({...m})), shiny: !!draft.shiny, teraType: draft.teraType || '',
     mega: draft.mega || '',
+    // the extra Status go only from the GM (the server ignores them from a player anyway)
+    ...(isGM() ? { bonus: draft.bonus || null } : {}),
     megaSheet: draft.mega && draft.megaSheet
       ? { ability: draft.megaSheet.ability || '', moves: (draft.megaSheet.moves || []).map(m => ({...m})) } : null,
     updatedAt: new Date().toISOString()
   };
   try {
+    // custom picture: a new one is uploaded first and the ficha keeps only its reference
+    let customArt = draft.customArt || null;
+    if (customArt && customArt.data) customArt = { id: await uploadImageData(customArt.data), pixel: !!customArt.pixel };
+    data.customArt = customArt;
     const owner = (!draftId && isGM()) ? draft._owner : undefined;
     const wasMega = sheetMega;
     const saved = await API.savePokemon({ ...data, id: draftId || undefined, owner });
@@ -2889,15 +3089,18 @@ function movePanelHtml(pos, m, control, heading, showChart, ctx) {
   const stats = finalStatsFor(m);
   const crit = critMarginFor(stats);
   const critTag = k => `<span class="scrit" title="Margem de crítico (não muda com os estágios)">${crit[k]}</span>`;
+  // GM: the homebrew extra Status, as a small mark by the name (already inside the numbers)
+  const extra = control ? bonusEffectOf(m) : null;
+  const extraTag = k => (extra && extra[k] ? `<span class="bonus-sup${extra[k].adds < 0 ? ' neg' : ''}" title="${esc(bonusTitle(extra[k], k))}">${bonusSign(extra[k].adds)}</span>` : '');
   const stages = `<div class="bt-stage">
-      <div class="shead"><span class="sname">HP</span>${critTag('hp')}</div>
+      <div class="shead"><span class="sname">HP${extraTag('hp')}</span>${critTag('hp')}</div>
       <div class="sval">${stats.hp}<span class="sdelta"></span></div>
       <div class="sstage"></div>
     </div>` + STAGE_KEYS.map(k => {
     const st = stageOf(m, k), eff = effectiveStat(m, k), delta = eff - stats[k];
     const dir = st > 0 ? 'up' : (st < 0 ? 'down' : '');
     return `<div class="bt-stage"${st ? ` title="${STAT_LABEL[k]} com os estágios: ${eff}"` : ''}>
-      <div class="shead"><span class="sname">${STAT_LABEL[k]}</span>${critTag(k)}</div>
+      <div class="shead"><span class="sname">${STAT_LABEL[k]}${extraTag(k)}</span>${critTag(k)}</div>
       <div class="sval">${stats[k]}<span class="sdelta ${dir}">${st ? (delta >= 0 ? '+' : '-') + Math.abs(delta) : ''}</span></div>
       <div class="sstage ${dir}">${st ? `<span class="sst-w">estágio </span><span class="sst-a">est. </span>${st > 0 ? '+' + st : st}` : ''}</div>
       ${control ? `<div class="srow"><button data-act="stage-" data-id="${id}" data-k="${k}">−</button><button data-act="stage+" data-id="${id}" data-k="${k}">+</button></div>` : ''}
@@ -3483,7 +3686,7 @@ const ART_BANNER_X = 200;
 function battleArtData(b) {
   const t = battleTrainers(b);
   // as each one finished the battle: Mega-evolved ones keep the Mega's sprite
-  const pick = m => ({ species: m.species, shiny: !!m.shiny, megaActive: megaFormOf(m) });
+  const pick = m => ({ species: m.species, shiny: !!m.shiny, megaActive: megaFormOf(m), art: m.customArt || m.art || null });
   const mon = id => battleMon(b, id);
   if (isGM()) {
     const side = s => ({ trainer: t[s], mons: b.revealed[s].map(mon).filter(Boolean).map(pick) });
@@ -3585,6 +3788,8 @@ async function drawBattleArt(out, data) {
   for (const [s, , mirror] of sides) {
     const mons = data[s].mons.slice(0, ART_SLOTS.length);
     const imgs = await Promise.all(mons.map(m => {
+      const custom = customArtOf(m);
+      if (custom) return loadArtImage(custom.url).then(img => (img ? { custom: true, pixel: custom.pixel, img } : null));
       const sid = spriteIdOf(m);
       return loadArtImage(sid ? spriteImg(sid, m.shiny) : null);
     }));
@@ -3593,7 +3798,17 @@ async function drawBattleArt(out, data) {
       const cx = mirror ? ART_W - sx : sx;
       ic.clearRect(0, 0, inner.width, inner.height);
       ic.globalCompositeOperation = 'source-over';
-      if (imgs[i]) {
+      if (imgs[i] && imgs[i].custom) {
+        // a custom picture fills the ball: brought down to 96px once (smoothly, unless it is pixel art) and
+        // drawn 1:1 like the sprites, not mirrored (it may have text or face either way)
+        const small = document.createElement('canvas');
+        small.width = small.height = 96;
+        const sc = small.getContext('2d');
+        sc.imageSmoothingEnabled = !imgs[i].pixel;
+        sc.imageSmoothingQuality = 'high';
+        sc.drawImage(imgs[i].img, 0, 0, 96, 96);
+        ic.drawImage(small, ART_R - 48, ART_R - 48);
+      } else if (imgs[i]) {
         ic.save();
         if (!mirror) { ic.translate(inner.width, 0); ic.scale(-1, 1); }   // left side looks right, toward the VS
         ic.drawImage(imgs[i], ART_R - 48, ART_R - 52);   // native 96px: no resampling, so the sprite stays sharp
@@ -4556,6 +4771,25 @@ async function init() {
   });
   document.getElementById('shinyBtn').addEventListener('click', () => { draft.shiny = !draft.shiny; renderSheet(); });
   document.getElementById('copyImageBtn').addEventListener('click', copySheetAsImage);
+  document.getElementById('bonusBtn').addEventListener('click', () => setEditing('bonus'));
+  document.getElementById('monArtBtn').addEventListener('click', openMonArtModal);
+  document.getElementById('maUploadBtn').addEventListener('click', () => document.getElementById('maFile').click());
+  document.getElementById('maFile').addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file || !monArtCtx) return;
+    try { openCrop(await loadImageFile(file), null, MON_ART_CROP); } catch (err) { alert(errMsg(err)); }
+  });
+  document.getElementById('maRecropBtn').addEventListener('click', () => { if (monArtCtx && monArtCtx.crop) openCrop(monArtCtx.crop.img, monArtCtx.crop, MON_ART_CROP); });
+  document.getElementById('maOfficialBtn').addEventListener('click', () => { if (monArtCtx) { monArtCtx.art = null; monArtCtx.crop = null; renderMonArtModal(); } });
+  document.getElementById('maCancelBtn').addEventListener('click', closeMonArtModal);
+  document.getElementById('maOkBtn').addEventListener('click', applyMonArt);
+  document.getElementById('monArtModal').addEventListener('click', (e) => { if (e.target.id === 'monArtModal') closeMonArtModal(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || document.getElementById('monArtModal').hidden) return;
+    if (crop && crop.opts === MON_ART_CROP) closeCrop(); else closeMonArtModal();
+  });
+  document.getElementById('bonusPop').addEventListener('click', onBonusPopClick);
 
   document.getElementById('meAvatarBtn').addEventListener('click', () => openAvatarModal('me'));
   document.getElementById('avUploadBtn').addEventListener('click', () => document.getElementById('avFile').click());
@@ -4563,10 +4797,10 @@ async function init() {
     const file = e.target.files && e.target.files[0];
     e.target.value = '';   // choosing the same file again still opens the framing
     if (!file || !avatarCtx) return;
-    try { openCrop(await loadImageFile(file)); }
+    try { openCrop(await loadImageFile(file), null, AVATAR_CROP); }
     catch (err) { alert(errMsg(err)); }
   });
-  document.getElementById('avRecropBtn').addEventListener('click', () => { if (avatarCtx && avatarCtx.crop) openCrop(avatarCtx.crop.img, avatarCtx.crop); });
+  document.getElementById('avRecropBtn').addEventListener('click', () => { if (avatarCtx && avatarCtx.crop) openCrop(avatarCtx.crop.img, avatarCtx.crop, AVATAR_CROP); });
   const cropCv = document.getElementById('cropCanvas');
   cropCv.addEventListener('pointerdown', onCropPointerDown);
   cropCv.addEventListener('pointermove', onCropPointerMove);
@@ -4577,7 +4811,7 @@ async function init() {
   document.getElementById('cropZoom').addEventListener('input', onCropSlider);
   document.getElementById('cropZoomIn').addEventListener('click', () => { if (crop) zoomCropAt(cropCv.width / 2, cropCv.height / 2, 1.25); });
   document.getElementById('cropZoomOut').addEventListener('click', () => { if (crop) zoomCropAt(cropCv.width / 2, cropCv.height / 2, 1 / 1.25); });
-  document.getElementById('cropReset').addEventListener('click', () => { if (crop) openCrop(crop.img); });
+  document.getElementById('cropReset').addEventListener('click', () => { if (crop) openCrop(crop.img, null, crop.opts); });
   document.getElementById('cropCancel').addEventListener('click', closeCrop);
   document.getElementById('cropOk').addEventListener('click', applyCrop);
   document.getElementById('avMon').addEventListener('input', (e) => {
