@@ -57,13 +57,16 @@ Os Status são HP, ATK, DEF, SPA, SPD, SPE.
   `customArtOf`; Mega ativa: a imagem da Mega, senão sprite da Mega oficial / imagem do Pokémon no Battle
   Bound; na visão pública vai já escolhida como `art` no `seen`, por `artShownFor`); a arena continua com o
   sprite oficial.
-  **Qualidade**: o recorte é alinhado a pixels inteiros e guardado no tamanho original (até 1024 px). Poucas
-  cores (`hasFewColors`, ≤ 1200: pixel art ou arte chapada) → PNG sem perda; muitas → WebP. **Tudo é suave
-  por padrão** (arte oficial chapada também tem poucas cores e não pode ficar em blocos); só um sprite
-  pequeno (poucas cores e até 200 px no recorte, `cropIsPixel`) é pixel art — ampliado nítido. O `pixel` da
-  imagem dá pra trocar na janela (controle "Pixel art"), inclusive numa imagem já salva. Na arte de fim de
-  batalha, pixel art entra no desenho de 640×360 como os sprites; o resto é pintado **depois** da ampliação
-  2×, na resolução final (`overlays` em `drawBattleArt`)
+  **Qualidade**: o recorte é alinhado a pixels inteiros e guardado no tamanho original (até 1024 px), então o
+  arquivo não perde nada; o que muda é como é **mostrado**. `analyzePicture` olha a imagem nos pixels dela:
+  poucas cores (≤ 1200) → PNG sem perda, senão WebP; e **pixel art = bordas duras**: onde a cor muda de
+  verdade (A → B), pixel art vai direto e ilustração/foto põe uma mistura de A e B no meio (antialiasing, em
+  RGBA pré-multiplicado, então borda suave contra transparência conta). Menos de 35% de bordas com mistura
+  → pixel art, ampliada nítida (`image-rendering: pixelated`), de qualquer tamanho; o resto é suavizado.
+  Não usar tamanho nem só contagem de cores: arte oficial chapada tem poucas cores, e pixel art grande
+  existe. O `pixel` dá pra trocar na janela (controle "Pixel art"), inclusive numa imagem já salva. Na arte
+  de fim de batalha, pixel art entra no desenho de 640×360 como os sprites; o resto é pintado **depois**
+  da ampliação 2×, na resolução final (`overlays` em `drawBattleArt`)
 - **HP em batalha** = Status de HP × 2
 - **Margem de crítico** = 10% do Status (mesmo arredondamento)
 - **Estágios de Status**: cada estágio vale 10% do Status original, limite de ±6.
@@ -102,6 +105,14 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   mostra o nome de login. Ao entrar numa sala sem personagem, a janela de caracterização abre sozinha.
   O Mestre vê os dois: na ficha ("Ash · jogador: Diogo"), na barra lateral, na dica da coluna de
   treinadores e na escolha de dono de ficha nova (`loginOf`, que é o `owner` da ficha)
+- **Ficha do treinador**: o ícone do topo abre a ficha do personagem, no formato da ficha de Pokémon —
+  seis Status livres **FOR, CON, SAB, INT, DES, CAR** (0…90, mesmo teto; sem pool de pontos; o canto mostra
+  a margem de crítico, 10%), **um quadro de anotações** no lugar dos golpes e a imagem com o nome (a
+  imagem própria da ficha, em alta, pelo 🖼 — mesma janela/enquadramento da ficha de Pokémon — ou o ícone).
+  "Nome, ícone e música" abre a janela de caracterização. Fica em `members.sheet` (JSON, em todos os tokens
+  do nome, como o avatar; `cleanTrainerSheet`). Cada um salva a sua (`PUT /api/me/sheet`); o Mestre vê
+  (`members[].sheet`) e edita a de qualquer jogador (`PUT /api/members/:nome/sheet`, pelo "📜 Ficha do
+  treinador" da barra lateral). Imagem segue as regras da imagem de ficha e some ao trocar ou na expulsão
 - Cada pessoa recebe um **token** salvo no `localStorage` e enviado no header
   `Authorization: Bearer <token>`
 - **As permissões são aplicadas no servidor**, não no cliente:

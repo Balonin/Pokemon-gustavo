@@ -71,6 +71,7 @@ if (DATABASE_URL) {
       ALTER TABLE members ADD COLUMN IF NOT EXISTS char_name TEXT NOT NULL DEFAULT '';
       ALTER TABLE npcs ADD COLUMN IF NOT EXISTS theme TEXT NOT NULL DEFAULT '';
       ALTER TABLE rooms ADD COLUMN IF NOT EXISTS banned TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE members ADD COLUMN IF NOT EXISTS sheet TEXT NOT NULL DEFAULT '';
       CREATE TABLE IF NOT EXISTS media (
         id TEXT PRIMARY KEY,
         room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
@@ -125,19 +126,23 @@ if (DATABASE_URL) {
     },
     async addMember(m) {
       await pool.query(
-        'INSERT INTO members (token, room_id, name, role, avatar, theme, char_name) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-        [m.token, m.roomId, m.name, m.role, m.avatar || '', themeText(m.theme), m.character || '']
+        'INSERT INTO members (token, room_id, name, role, avatar, theme, char_name, sheet) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
+        [m.token, m.roomId, m.name, m.role, m.avatar || '', themeText(m.theme), m.character || '', sheetText(m.sheet)]
       );
     },
     async getMember(token) {
       const r = await pool.query('SELECT * FROM members WHERE token = $1', [token]);
       if (!r.rows[0]) return null;
       const x = r.rows[0];
-      return { token: x.token, roomId: x.room_id, name: x.name, role: x.role, avatar: x.avatar || '', theme: parseTheme(x.theme), character: x.char_name || '' };
+      return { token: x.token, roomId: x.room_id, name: x.name, role: x.role, avatar: x.avatar || '', theme: parseTheme(x.theme), character: x.char_name || '', sheet: parseSheet(x.sheet) };
     },
     async listMembers(roomId) {
-      const r = await pool.query('SELECT name, role, avatar, theme, char_name FROM members WHERE room_id = $1 ORDER BY created_at', [roomId]);
-      return r.rows.map(x => ({ name: x.name, role: x.role, avatar: x.avatar, theme: parseTheme(x.theme), character: x.char_name || '' }));
+      const r = await pool.query('SELECT name, role, avatar, theme, char_name, sheet FROM members WHERE room_id = $1 ORDER BY created_at', [roomId]);
+      return r.rows.map(x => ({ name: x.name, role: x.role, avatar: x.avatar, theme: parseTheme(x.theme), character: x.char_name || '', sheet: parseSheet(x.sheet) }));
+    },
+    // the trainer's own sheet (Status and notes), kept on every token of the name like the avatar
+    async setMemberSheet(roomId, name, sheet) {
+      await pool.query('UPDATE members SET sheet = $3 WHERE room_id = $1 AND name = $2', [roomId, name, sheetText(sheet)]);
     },
     /* the same person may hold several tokens (one per device): keep the avatar in sync on all of them */
     async setMemberAvatar(roomId, name, avatar) {
@@ -261,11 +266,14 @@ if (DATABASE_URL) {
       });
       delete mem.rooms[id];
     },
-    async addMember(m) { mem.members[m.token] = { avatar: '', theme: null, character: '', ...m }; },
+    async addMember(m) { mem.members[m.token] = { avatar: '', theme: null, character: '', sheet: null, ...m }; },
     async getMember(token) { return mem.members[token] || null; },
     async listMembers(roomId) {
       return Object.values(mem.members).filter(m => m.roomId === roomId)
-        .map(m => ({ name: m.name, role: m.role, avatar: m.avatar || '', theme: m.theme || null, character: m.character || '' }));
+        .map(m => ({ name: m.name, role: m.role, avatar: m.avatar || '', theme: m.theme || null, character: m.character || '', sheet: m.sheet || null }));
+    },
+    async setMemberSheet(roomId, name, sheet) {
+      Object.values(mem.members).forEach(m => { if (m.roomId === roomId && m.name === name) m.sheet = sheet; });
     },
     async setMemberAvatar(roomId, name, avatar) {
       Object.values(mem.members).forEach(m => { if (m.roomId === roomId && m.name === name) m.avatar = avatar; });
@@ -391,6 +399,21 @@ function parseTheme(text) {
 }
 function themeText(theme) { return theme ? JSON.stringify(theme) : ''; }
 
+/* The trainer's own sheet: six Status distributed freely (whole numbers 0…90 — the same cap of 90 as a
+   Pokémon), one notes box and an optional picture for the sheet ({ id, pixel } in media, like a ficha's). */
+const TRAINER_STATS = ['for', 'con', 'sab', 'int', 'des', 'car'];
+function parseSheet(text) {
+  if (!text) return null;
+  try { return typeof text === 'string' ? JSON.parse(text) : text; } catch (e) { return null; }
+}
+function sheetText(sheet) { return sheet ? JSON.stringify(sheet) : ''; }
+function cleanTrainerSheet(x) {
+  const src = x && typeof x === 'object' && !Array.isArray(x) ? x : {};
+  const stats = {};
+  TRAINER_STATS.forEach(k => { stats[k] = Math.max(0, Math.min(90, parseInt((src.stats || {})[k], 10) || 0)); });
+  return { stats, notes: String(src.notes || '').slice(0, 8000), art: cleanCustomArt(src.art) };
+}
+
 function parseThemeLink(raw) {
   const text = String(raw || '').trim();
   const sp = /^spotify:(track|album|playlist|episode):([A-Za-z0-9]{10,40})$/.exec(text);   // app "copy URI"
@@ -463,8 +486,9 @@ function uniqueMembers(rows) {
   const byName = new Map();
   rows.forEach(r => {
     const cur = byName.get(r.name);
-    if (!cur) { byName.set(r.name, { name: r.name, role: r.role, avatar: r.avatar || '', theme: r.theme || null, character: r.character || '' }); return; }
+    if (!cur) { byName.set(r.name, { name: r.name, role: r.role, avatar: r.avatar || '', theme: r.theme || null, character: r.character || '', sheet: r.sheet || null }); return; }
     if (r.role === 'gm') cur.role = 'gm';
+    if (!cur.sheet && r.sheet) cur.sheet = r.sheet;
     if (!cur.avatar && r.avatar) cur.avatar = r.avatar;
     if (!cur.theme && r.theme) cur.theme = r.theme;
     if (!cur.character && r.character) cur.character = r.character;
@@ -790,7 +814,7 @@ app.post('/api/rooms/:id/join', async (req, res) => {
     const same = uniqueMembers(await store.listMembers(roomId)).find(x => x.name === name);
     const avatar = same ? same.avatar : '';
     const t = token();
-    await store.addMember({ token: t, roomId, name, role: 'player', avatar, theme: same ? same.theme : null, character: same ? same.character : '' });
+    await store.addMember({ token: t, roomId, name, role: 'player', avatar, theme: same ? same.theme : null, character: same ? same.character : '', sheet: same ? same.sheet : null });
     res.json({ roomId, name: room.name, token: t, role: 'player', avatar });
   } catch (e) {
     console.error(e); res.status(500).json({ error: 'erro_interno' });
@@ -850,6 +874,7 @@ app.delete('/api/members/:name', auth, async (req, res) => {
     } else {
       await releaseTheme(member.theme, null);   // the theme lives on the member rows that are going away
     }
+    if (member.sheet && member.sheet.art) await store.deleteMedia(member.sheet.art.id);   // and so does the trainer sheet
     await store.removeMember(m.roomId, name);
     if (body.block) {
       const room = await store.getRoom(m.roomId);
@@ -895,7 +920,7 @@ app.get('/api/state', auth, async (req, res) => {
     const npcs = isGM(m) ? await store.listNpcs(m.roomId) : [];
     res.json({
       room: { id: room.id, name: room.name, gmName: room.gmName, ...(isGM(m) ? { banned: room.banned || [] } : {}) },
-      me: { name: m.name, role: m.role, avatar: m.avatar || '', theme: m.theme || null, character: m.character || '' },
+      me: { name: m.name, role: m.role, avatar: m.avatar || '', theme: m.theme || null, character: m.character || '', sheet: m.sheet || null },
       members, npcs, pokemon, teams, battles
     });
   } catch (e) {
@@ -954,6 +979,35 @@ app.get('/media/:id', async (req, res) => {
 });
 
 /* the name of your character in this campaign (what the others see); empty = your own name */
+/* The trainer sheet: each trainer saves their own; the GM can also save any player's (like the fichas).
+   Its picture follows the ficha rules: a media image of the room, uploaded by whoever saves it (the GM may
+   use any), and a replaced or removed one is deleted. */
+async function saveTrainerSheet(req, res, name) {
+  const m = req.member;
+  const member = uniqueMembers(await store.listMembers(m.roomId)).find(x => x.name === name);
+  if (!member) return res.status(404).json({ error: 'jogador_nao_encontrado' });
+  const sheet = cleanTrainerSheet(req.body.sheet);
+  const before = member.sheet && member.sheet.art ? member.sheet.art.id : null;
+  if (sheet.art && sheet.art.id !== before) {
+    const f = await store.getMediaInfo(sheet.art.id);
+    if (!f || f.roomId !== m.roomId || !IMAGE_MIMES.includes(f.mime) || (!isGM(m) && f.owner !== m.name)) {
+      return res.status(400).json({ error: 'imagem_invalida' });
+    }
+  }
+  await store.setMemberSheet(m.roomId, name, sheet);
+  if (before && (!sheet.art || sheet.art.id !== before)) await store.deleteMedia(before);
+  res.json({ ok: true, sheet });
+}
+app.put('/api/me/sheet', auth, async (req, res) => {
+  try { await saveTrainerSheet(req, res, req.member.name); } catch (e) { console.error(e); res.status(500).json({ error: 'erro_interno' }); }
+});
+app.put('/api/members/:name/sheet', auth, async (req, res) => {
+  try {
+    if (!isGM(req.member)) return res.status(403).json({ error: 'so_mestre' });
+    await saveTrainerSheet(req, res, String(req.params.name || ''));
+  } catch (e) { console.error(e); res.status(500).json({ error: 'erro_interno' }); }
+});
+
 app.put('/api/me/character', auth, async (req, res) => {
   try {
     const character = String(req.body.character || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 40);

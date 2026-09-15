@@ -47,7 +47,7 @@ h3 { font-family: var(--font-pixel); font-size: 0.708rem; margin: 0 0 8px; color
 /* ====== PokeRogue pixel frame ====== */
 .card, .panel, .tab-btn, .btn, .mon-tile, .team-mon-chip, .mon-item, .sheet, .role-badge,
 .art-frame, .shiny-btn, .stat-box, .points-banner, .hp-bar, .nature-box,
-.ability-box, .matchup-box, .tera-picker, .move-card, .move-card-add, .ws-rail, .tr-tile, .bn-tile, .bt-panel, .bl-card, .toast, .bt-log, .bt-music {
+.ability-box, .matchup-box, .tera-picker, .move-card, .move-card-add, .ws-rail, .tr-tile, .bn-tile, .bt-panel, .bl-card, .toast, .bt-log, .bt-music, .ts-notes-box {
   clip-path: polygon(
     calc(var(--u)*2) 0, calc(100% - var(--u)*2) 0,
     calc(100% - var(--u)*2) var(--u), calc(100% - var(--u)) var(--u),
@@ -326,6 +326,15 @@ body.in-room { max-width: none; padding: 12px; }
 .moves-grid[data-edit="3"] { grid-template-rows: repeat(3, minmax(30px, 1fr)) fit-content(calc(100% - 114px)); }
 .move-card.editing .mv_desc { min-height: 76px; flex-shrink: 0; }
 .col-moves.editing-move .ability-slot { display: none; }
+/* trainer sheet: one notes box where a Pokémon has its moves */
+.ts-notes-box { --fill: var(--panel); --edge: #5a6a7a; flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; }
+.ts-notes-l { font-family: var(--font-pixel); font-size: 0.6rem; color: var(--gold); flex-shrink: 0; }
+.ts-notes-box textarea { flex: 1; min-height: 120px; resize: none; line-height: 1.5; }
+.trainer-sheet .stat-box .value { font-size: 1.5rem; }
+.ts-edit { display: flex; align-items: center; justify-content: center; gap: 5px; margin-top: 4px; }
+.ts-edit input { width: 54px; text-align: center; padding: 3px 4px; font-size: 1rem; }
+.ts-edit .mini-btn { padding: 3px 8px; }
+.ts-sub { font-family: var(--font-input); font-size: 0.85rem; color: var(--ink-soft); margin-top: 4px; }
 /* on a short screen the card may still scroll: its buttons stay at the bottom edge, always reachable */
 .move-card.editing .mv-remove-row { position: sticky; bottom: 0; margin-top: 5px; padding-top: 6px; background: var(--panel); }
 .move-manual-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 5px; flex-shrink: 0; }
@@ -904,7 +913,7 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
       <span id="wsRoomName">Sala</span>
       <button class="room-edit-btn" id="roomEditBtn" title="Campanha: mudar o nome ou excluir" hidden>⚙</button>
       <span class="role-badge" id="wsRoleBadge">JOGADOR</span>
-      <button class="me-avatar-btn" id="meAvatarBtn" title="Trocar sua caracterização"></button>
+      <button class="me-avatar-btn" id="meAvatarBtn" title="Sua ficha de treinador (Status, anotações, nome, ícone e música)"></button>
     </div>
     <div class="ws-actions">
       <button class="btn secondary small" id="inviteBtn">🔗 Convidar</button>
@@ -971,6 +980,42 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
 
 
 </div>
+      <!-- THE TRAINER SHEET: the character, laid out like a Pokémon's ficha (Status, notes, picture) -->
+      <div id="trainerSheetHost" style="display:none;">
+        <div class="sheet trainer-sheet">
+          <div class="sheet-topbar">
+            <div class="sheet-owner" id="tsOwner"></div>
+            <button class="btn secondary small" id="tsCharBtn">🎨 Nome, ícone e música</button>
+            <button class="btn secondary small" id="tsCloseBtn">✕ Fechar</button>
+          </div>
+          <div class="capture-area">
+            <div class="col-stats">
+              <div class="points-banner">Status do treinador · livres, até 90</div>
+              <div class="stats-grid" id="tsStats"></div>
+            </div>
+            <div class="col-moves">
+              <div class="ts-notes-box">
+                <div class="ts-notes-l">Anotações</div>
+                <textarea id="tsNotes" placeholder="História, inventário, perícias, o que quiser anotar…"></textarea>
+              </div>
+            </div>
+            <div class="col-art">
+              <div id="tsHeader"></div>
+              <div class="art-box">
+                <div class="art-frame-wrap">
+                  <div class="art-frame" id="tsArt"></div>
+                  <button class="shiny-btn pic-btn" id="tsArtBtn" title="Imagem da ficha (pode ser em alta resolução)">🖼</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="sheet-actions">
+            <div style="flex:1;"></div>
+            <button class="btn secondary" id="tsCancelBtn">Cancelar</button>
+            <button class="btn" id="tsSaveBtn">Salvar Ficha</button>
+          </div>
+        </div>
+      </div>
       <div id="battlePanel" style="display:none;">
         <div class="battle-head">
           <div class="battle-title">⚔ MODO BATALHA <span style="font-size:0.6rem;color:var(--ink-soft);">BETA</span></div>
@@ -1113,7 +1158,7 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
 <div class="modal-backdrop" id="monArtModal" hidden>
   <div class="card modal" role="dialog" aria-modal="true" aria-labelledby="maTitle">
     <h2 id="maTitle">Imagem do Pokémon</h2>
-    <div class="sub" style="margin:10px 0 0;">Aparece na ficha e na arte de fim de batalha. Na batalha continua o sprite oficial.</div>
+    <div class="sub" style="margin:10px 0 0;" id="maIntro">Aparece na ficha e na arte de fim de batalha. Na batalha continua o sprite oficial.</div>
     <div class="avatar-editor" id="maEditor">
       <div class="ma-preview" id="maPreview"></div>
       <div class="avatar-opts">
@@ -1599,41 +1644,65 @@ function loadImageFile(file) {
 // ----- Framing an uploaded picture -----
 // The square on screen is exactly what becomes the picture: drag to move it, zoom with the slider,
 // the mouse wheel or a pinch. The picture always covers the square (no empty borders).
-// A picture with few colours (pixel art, flat illustrations) is saved losslessly (PNG). Everything is
-// smoothed by default — flat official artwork also has few colours and must not look blocky. Only a small
-// few-colour picture (a sprite, up to PIXEL_ART_MAX_SIDE px across the square) is taken as pixel art and
-// enlarged crisp; the ficha's picture window has a switch to change it either way.
+// A picture with few colours (pixel art, flat illustrations) is saved losslessly (PNG). Pixel art — told
+// apart by its hard edges, see analyzePicture — is enlarged crisp, at any size; everything else (flat
+// official artwork included) is smoothed. The ficha's picture window has a switch to change it either way.
 // One editor (#avCrop) serves the trainer's avatar and the ficha's picture: `opts` says where it shows
 // (host), what it replaces meanwhile (hide), the size it makes (`size`, or the picture's own pixels up to
 // `max`) and what to do with the result.
 let crop = null;   // { img, w, h, s (screen px per picture px), x, y (picture's corner on the square), min, max, pointers, fewColors, opts }
 const cropCanvas = () => document.getElementById('cropCanvas');
 const PIXEL_ART_COLORS = 1200;
-const PIXEL_ART_MAX_SIDE = 200;
 // Pixel art and flat artwork have a few hundred colours at most; photos and painted art have thousands.
 // Counted on a copy of at most 256 px (nearest neighbour, so no new colours appear), skipping almost
 // transparent pixels.
-function hasFewColors(img) {
-  if (img._pixel !== undefined) return img._pixel;
-  const k = Math.min(1, 256 / Math.max(img.naturalWidth, img.naturalHeight));
+// What kind of picture it is, looked at in its own pixels (a very big one on a nearest-neighbour copy of
+// 1024 px, which adds no colours):
+// - fewColors: at most PIXEL_ART_COLORS colours (pixel art or flat artwork) → saved losslessly (PNG);
+// - pixelArt: hard edges. Wherever the colour really changes (A → B), pixel art goes straight from A to B,
+//   while an illustration's anti-aliased outline (or a photo's blur) puts a mix of A and B in between. So
+//   it's pixel art when few of its edges have such a mix (alpha counts too — in premultiplied colour, a
+//   soft outer edge is a mix with transparency). Size doesn't matter: a big pixel art stays crisp.
+const PIXEL_ART_BLEND = 0.35;
+function analyzePicture(img) {
+  if (img._kind) return img._kind;
+  const k = Math.min(1, 1024 / Math.max(img.naturalWidth, img.naturalHeight));
   const w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const g = c.getContext('2d', { willReadFrequently: true });
   g.imageSmoothingEnabled = false;
   g.drawImage(img, 0, 0, w, h);
-  const px = g.getImageData(0, 0, w, h).data, seen = new Set();
-  let pixel = true;
-  for (let i = 0; i < px.length && pixel; i += 4) {
-    if (px[i + 3] < 24) continue;
-    seen.add((px[i] << 16) | (px[i + 1] << 8) | px[i + 2]);
-    if (seen.size > PIXEL_ART_COLORS) pixel = false;
+  const px = g.getImageData(0, 0, w, h).data;
+  // premultiplied RGBA of pixel n: transparent is (0,0,0,0) whatever its colour, so blends are linear
+  const P = new Float32Array(w * h * 4), colors = new Set();
+  for (let n = 0, i = 0; n < w * h; n++, i += 4) {
+    const a = px[i + 3] / 255;
+    P[i] = px[i] * a; P[i + 1] = px[i + 1] * a; P[i + 2] = px[i + 2] * a; P[i + 3] = px[i + 3];
+    if (px[i + 3] >= 24 && colors.size <= 4096) colors.add((px[i] << 16) | (px[i + 1] << 8) | px[i + 2]);
   }
-  img._pixel = pixel;
-  return pixel;
+  const d2 = (i, j) => { let s = 0; for (let q = 0; q < 4; q++) { const v = P[i + q] - P[j + q]; s += v * v; } return s; };
+  let edges = 0, blends = 0;
+  // three pixels in a row (i0, i1, i2) across a real change of colour: is the middle one a mix of the sides?
+  const look = (i0, i1, i2) => {
+    const e = d2(i0, i2);
+    if (e < 80 * 80) return;                        // no real edge here
+    edges++;
+    if (d2(i1, i0) < 144 || d2(i1, i2) < 144) return;   // the middle pixel belongs to one side: hard edge
+    let dot = 0; for (let q = 0; q < 4; q++) dot += (P[i1 + q] - P[i0 + q]) * (P[i2 + q] - P[i0 + q]);
+    const t = dot / e;
+    if (t <= 0.08 || t >= 0.92) return;
+    let off = 0; for (let q = 0; q < 4; q++) { const v = P[i1 + q] - (P[i0 + q] + t * (P[i2 + q] - P[i0 + q])); off += v * v; }
+    if (off < 0.06 * e) blends++;                    // close to the line between them: a blend
+  };
+  for (let y = 0; y < h; y++) for (let x = 1; x < w - 1; x++) { const i = (y * w + x) * 4; look(i - 4, i, i + 4); }
+  for (let x = 0; x < w; x++) for (let y = 1; y < h - 1; y++) { const i = (y * w + x) * 4; look(i - w * 4, i, i + w * 4); }
+  const fewColors = colors.size <= PIXEL_ART_COLORS;
+  img._kind = { fewColors, pixelArt: colors.size <= 4096 && edges >= 30 && blends / edges < PIXEL_ART_BLEND };
+  return img._kind;
 }
-// taken as pixel art (enlarged crisp): few colours and small — a sprite, not an illustration
-function cropIsPixel() { return crop.fewColors && cropRegion().side <= PIXEL_ART_MAX_SIDE; }
+// taken as pixel art (enlarged crisp, never smoothed)
+function cropIsPixel() { return crop.pixelArt; }
 // drawing at `scale` (new size ÷ picture size): smooth to shrink, and to enlarge anything but pixel art
 function cropSmoothAt(scale) { return scale < 1 || !cropIsPixel(); }
 const AVATAR_CROP = {
@@ -1651,7 +1720,7 @@ function openCrop(img, state, opts) {
   const w = img.naturalWidth, h = img.naturalHeight;
   const min = S / Math.min(w, h);                              // the picture's short side fills the square
   const max = Math.max(min, Math.min(min * 10, S / 8));        // up to 10×, but always at least 8 picture px across
-  crop = { img, w, h, min, max, pointers: new Map(), s: min, x: (S - w * min) / 2, y: (S - h * min) / 2, opts, fewColors: hasFewColors(img) };
+  crop = { img, w, h, min, max, pointers: new Map(), s: min, x: (S - w * min) / 2, y: (S - h * min) / 2, opts, ...analyzePicture(img) };
   if (state && state.S) {   // re-framing: same framing as before, in this square's pixels
     const k = S / state.S;
     Object.assign(crop, { s: state.s * k, x: state.x * k, y: state.y * k });
@@ -1729,7 +1798,7 @@ function cropExport() {
   const c = document.createElement('canvas');
   c.width = c.height = crop.opts.size || Math.min(side, crop.opts.max);
   renderCropTo(c);
-  if (crop.fewColors) return c.toDataURL('image/png');   // lossless: pixel art / flat art keep every pixel
+  if (crop.fewColors || crop.pixelArt) return c.toDataURL('image/png');   // lossless: pixel art / flat art keep every pixel
   const data = c.toDataURL('image/webp', 0.92);
   return data.startsWith('data:image/webp') ? data : c.toDataURL('image/png');
 }
@@ -2033,6 +2102,7 @@ function populateSelect(sel, options, allowNone) {
 // ownerKey: for a new ficha, which trainer it will belong to (GM only; defaults to yourself)
 // mega: open its Mega sheet (if it has a Mega)
 function openSheet(mon, ownerKey, mega) {
+  if (tsCtx) { tsCtx = null; document.getElementById('trainerSheetHost').style.display = 'none'; }
   // missing fields (old or partial fichas) fall back to the blank ficha's defaults
   draft = mon ? { ...blankDraft(), ...JSON.parse(JSON.stringify(mon)) } : blankDraft();
   if (!draft.distributed) draft.distributed = blankDraft().distributed;
@@ -2625,27 +2695,51 @@ function onBonusPopClick(ev) {
 // The picture keeps its own pixels (up to 1024 px), so pixel art isn't resampled and an illustration stays
 // sharp on high-density screens and in "Copiar imagem" (captured at 2×).
 const ART_MAX = 1024;
-let monArtCtx = null;   // { target: 'base' | 'mega', art: the picture being chosen (null = default), crop: last framing }
+// The picture window serves the Pokémon ficha (its picture, or the Mega's) and the trainer sheet:
+// monArtCtx = { art: the picture being chosen (null = the default one), crop: last framing,
+//   title, clearLabel, fallback (note when there's none), preview(art) → image src + smooth, done(art, crop) }
+let monArtCtx = null;
 const MON_ART_CROP = {
   max: ART_MAX, host: 'maCropHost', hide: 'maEditor',
   onApply: (data, state) => { if (!monArtCtx) return; monArtCtx.art = { data, pixel: state.pixel }; monArtCtx.crop = state; renderMonArtModal(); }
 };
+function showMonArtModal(ctx) {
+  monArtCtx = ctx;
+  document.getElementById('maTitle').textContent = ctx.title;
+  document.getElementById('maOfficialBtn').textContent = ctx.clearLabel;
+  document.getElementById('maIntro').textContent = ctx.intro;
+  renderMonArtModal();
+  document.getElementById('monArtModal').hidden = false;
+}
+// the Pokémon ficha: the normal sheet edits `customArt`, the Mega sheet `megaSheet.art`
 function openMonArtModal() {
   if (!draft) return;
   const target = sheetMega && draft.mega ? 'mega' : 'base';
   const art = target === 'mega' ? (draft.megaSheet && draft.megaSheet.art) : draft.customArt;
-  monArtCtx = { target, art: art || null, crop: (draft._artCrop || {})[target] || null };
-  document.getElementById('maTitle').textContent = target === 'base' ? 'Imagem do Pokémon' : `Imagem ${draft.mega === BATTLE_BOUND ? 'do Battle Bound' : 'da Mega'}`;
-  document.getElementById('maOfficialBtn').textContent = target === 'base' ? 'Usar o sprite oficial' : 'Tirar a imagem própria';
-  renderMonArtModal();
-  document.getElementById('monArtModal').hidden = false;
-}
-// the draft as it would look with the picture being chosen (for the preview)
-function monArtPreviewOf() {
-  const c = monArtCtx;
-  if (c.target === 'base') return { ...draft, battle: null, customArt: c.art };
-  const view = megaViewOf(draft);
-  return { ...view, megaSheet: { ...(view.megaSheet || draft.megaSheet || {}), art: c.art } };
+  // the draft as it would look with the picture being chosen
+  const lookWith = a => {
+    if (target === 'base') return { ...draft, battle: null, customArt: a };
+    const view = megaViewOf(draft);
+    return { ...view, megaSheet: { ...(view.megaSheet || draft.megaSheet || {}), art: a } };
+  };
+  showMonArtModal({
+    art: art || null, crop: (draft._artCrop || {})[target] || null,
+    title: target === 'base' ? 'Imagem do Pokémon' : `Imagem ${draft.mega === BATTLE_BOUND ? 'do Battle Bound' : 'da Mega'}`,
+    clearLabel: target === 'base' ? 'Usar o sprite oficial' : 'Tirar a imagem própria',
+    intro: 'Aparece na ficha e na arte de fim de batalha. Na batalha continua o sprite oficial.',
+    fallback: target === 'base' ? 'Usando o sprite oficial.'
+      : (draft.mega === BATTLE_BOUND ? 'Sem imagem própria: usa a imagem do Pokémon.' : 'Sem imagem própria: usa o sprite oficial da Mega.'),
+    preview: a => {
+      const look = lookWith(a), custom = customArtOf(look), dexId = spriteIdOf(look);
+      return { src: custom ? custom.url : (dexId ? spriteImg(dexId, draft.shiny) : null), smooth: !!custom && !custom.pixel };
+    },
+    done: (a, c) => {
+      if (target === 'mega') draft.megaSheet = { ...(draft.megaSheet || newMegaSheet(draft, draft.mega, true)), art: a };
+      else draft.customArt = a;
+      draft._artCrop = { ...(draft._artCrop || {}), [target]: a && a.data ? c : null };
+      renderSheet();
+    }
+  });
 }
 function closeMonArtModal() {
   if (crop && crop.opts === MON_ART_CROP) closeCrop();
@@ -2653,33 +2747,166 @@ function closeMonArtModal() {
   monArtCtx = null;
 }
 function renderMonArtModal() {
-  if (!monArtCtx || !draft) return;
-  const look = monArtPreviewOf();
-  const custom = customArtOf(look);
-  const dexId = spriteIdOf(look);
-  const src = custom ? custom.url : (dexId ? spriteImg(dexId, draft.shiny) : null);
-  document.getElementById('maPreview').innerHTML = src
-    ? `<img src="${esc(src)}" alt=""${custom && !custom.pixel ? ' class="smooth"' : ''}>` : '<span class="ph-letter">?</span>';
-  document.getElementById('maRecropBtn').hidden = !(monArtCtx.art && monArtCtx.art.data && monArtCtx.crop);
-  document.getElementById('maOfficialBtn').hidden = !monArtCtx.art;
+  const c = monArtCtx;
+  if (!c) return;
+  const p = c.preview(c.art);
+  document.getElementById('maPreview').innerHTML = p.src
+    ? `<img src="${esc(p.src)}" alt=""${p.smooth ? ' class="smooth"' : ''}>` : `<span class="ph-letter">${esc(p.letter || '?')}</span>`;
+  document.getElementById('maRecropBtn').hidden = !(c.art && c.art.data && c.crop);
+  document.getElementById('maOfficialBtn').hidden = !c.art;
   // how it is enlarged: set on upload (only small sprites are pixel art) and changeable, even once saved
-  document.getElementById('maPixelRow').hidden = !monArtCtx.art;
-  document.getElementById('maPixel').checked = !!(monArtCtx.art && monArtCtx.art.pixel);
-  const fallback = monArtCtx.target === 'base' ? 'Usando o sprite oficial.'
-    : (draft.mega === BATTLE_BOUND ? 'Sem imagem própria: usa a imagem do Pokémon.' : 'Sem imagem própria: usa o sprite oficial da Mega.');
-  document.getElementById('maNote').textContent = monArtCtx.art
-    ? (monArtCtx.art.data ? 'Imagem nova — vai junto quando você salvar a ficha.' : 'Imagem personalizada.') : fallback;
+  document.getElementById('maPixelRow').hidden = !c.art;
+  document.getElementById('maPixel').checked = !!(c.art && c.art.pixel);
+  document.getElementById('maNote').textContent = c.art
+    ? (c.art.data ? 'Imagem nova — vai junto quando você salvar a ficha.' : 'Imagem personalizada.') : c.fallback;
 }
 function applyMonArt() {
   if (crop && crop.opts === MON_ART_CROP) applyCrop();   // "Pronto" while framing keeps the framing on screen
-  if (!monArtCtx || !draft) return;
-  const { target, art } = monArtCtx;
-  if (target === 'mega') draft.megaSheet = { ...(draft.megaSheet || newMegaSheet(draft, draft.mega, true)), art };
-  else draft.customArt = art;
-  draft._artCrop = { ...(draft._artCrop || {}), [target]: art && art.data ? monArtCtx.crop : null };
+  const c = monArtCtx;
+  if (!c) return;
   closeMonArtModal();
-  renderSheet();
+  c.done(c.art, c.crop);
 }
+// ===== Trainer sheet =====
+// The character as a ficha: six Status given freely (0…90, the same cap as a Pokémon; the corner shows the
+// crit margin, 10% of it), one notes box where a Pokémon has moves, and the picture with the name. Each
+// trainer edits their own (the icon at the top); the GM also opens any player's from the sidebar.
+const TRAINER_STATS = ['for', 'con', 'sab', 'int', 'des', 'car'];   // grid order: FOR CON / SAB INT / DES CAR
+const TRAINER_STAT_LABEL = { for: 'FOR', con: 'CON', sab: 'SAB', int: 'INT', des: 'DES', car: 'CAR' };
+const TRAINER_STAT_NAME = { for: 'Força', con: 'Constituição', sab: 'Sabedoria', int: 'Inteligência', des: 'Destreza', car: 'Carisma' };
+let mySheet = null;     // own trainer sheet from the server
+let tsCtx = null;       // { key: login name, sheet: the draft, editing: stat being edited, crop }
+function trainerSheetOf(key) {
+  const src = key === currentTrainer ? mySheet : ((allMembers.find(x => x.name === key) || {}).sheet || null);
+  const stats = {};
+  TRAINER_STATS.forEach(k => { stats[k] = (src && src.stats && src.stats[k]) || 0; });
+  return { stats, notes: (src && src.notes) || '', art: (src && src.art) || null };
+}
+function openTrainerSheet(key) {
+  if (draft) closeSheet();
+  tsCtx = { key, sheet: trainerSheetOf(key), editing: null, crop: null };
+  ['sheetHost', 'emptyState', 'teamsPanel', 'battlePanel'].forEach(id => { document.getElementById(id).style.display = 'none'; });
+  document.getElementById('trainerSheetHost').style.display = 'block';
+  document.getElementById('tsNotes').value = tsCtx.sheet.notes;
+  renderTrainerSheet();
+}
+function closeTrainerSheet() {
+  if (!tsCtx) return;
+  tsCtx = null;
+  document.getElementById('trainerSheetHost').style.display = 'none';
+  if (battleMode) { document.getElementById('battlePanel').style.display = 'block'; renderBattle(); }
+  else if (!draft) document.getElementById('emptyState').style.display = 'block';
+}
+function trainerStatBox(k) {
+  const v = tsCtx.sheet.stats[k], editing = tsCtx.editing === k;
+  return `<div class="stat-box${editing ? ' editing' : ''}" data-ts="${k}" title="${TRAINER_STAT_NAME[k]}">
+    <div class="stat-top"><div class="label">${TRAINER_STAT_LABEL[k]}</div><div class="value">${v}</div></div>
+    <div class="crit-corner" title="Margem de crítico (10%)">${roundStatus(v * 0.1)}</div>
+    ${editing ? `<div class="ts-edit">
+      <button class="mini-btn" data-ts-step="-1" title="−1">−</button>
+      <input class="ts-val" inputmode="numeric" maxlength="2" autocomplete="off" value="${v}" aria-label="${TRAINER_STAT_NAME[k]}">
+      <button class="mini-btn" data-ts-step="1" title="+1">+</button>
+    </div>` : ''}
+  </div>`;
+}
+function renderTrainerSheet() {
+  if (!tsCtx) return;
+  renderTrainerHead();
+  document.getElementById('tsStats').innerHTML = TRAINER_STATS.map(trainerStatBox).join('');
+  const input = document.querySelector('#tsStats .ts-val');
+  if (input) { input.focus(); input.select(); }
+}
+// who it is (name, icon, picture): redrawn when the state comes in, without touching what's being edited
+function renderTrainerHead() {
+  if (!tsCtx) return;
+  const t = trainerOf(tsCtx.key), login = loginOf(t), mine = tsCtx.key === currentTrainer;
+  document.getElementById('tsOwner').innerHTML = mine ? '<span>Sua ficha de treinador</span>'
+    : `${avatarHtml(t.avatar, t.name)}<span class="owner-names"><b>${esc(t.name)}</b>${login ? `<small>jogador: ${esc(login)}</small>` : ''}</span>`;
+  document.getElementById('tsCharBtn').hidden = !mine;   // name / icon / music: each trainer sets their own
+  document.getElementById('tsHeader').innerHTML = `<div class="header-row"><div>
+    <div class="header-name">${esc(t.name)}</div>
+    <div class="ts-sub">${login ? `jogador: ${esc(login)}` : (t.kind === 'gm' ? 'Mestre' : 'Treinador')}</div></div></div>`;
+  renderTrainerArt();
+}
+// the sheet's picture: its own (high resolution), else the trainer's icon enlarged
+function trainerArtLook(art) {
+  const t = trainerOf(tsCtx.key);
+  if (art && (art.data || art.id)) return { src: art.data || '/media/' + encodeURIComponent(art.id), smooth: !art.pixel };
+  const mon = /^mon:(\d+)$/.exec(t.avatar || '');
+  if (mon) return { src: spriteImg(mon[1]), smooth: false };
+  if (t.avatar && t.avatar.startsWith('data:image/')) return { src: t.avatar, smooth: true };
+  return { src: null, letter: (t.name || '?').charAt(0).toUpperCase() };
+}
+function renderTrainerArt() {
+  const look = trainerArtLook(tsCtx.sheet.art);
+  document.getElementById('tsArt').innerHTML = look.src
+    ? `<img src="${esc(look.src)}" alt="" class="custom-art${look.smooth ? ' smooth' : ''}">` : `<span class="ph-letter">${esc(look.letter)}</span>`;
+  document.getElementById('tsArtBtn').classList.toggle('active', !!tsCtx.sheet.art);
+}
+// a Status typed or stepped: 0…90, shown at once (the box isn't redrawn while typing, to keep the caret)
+function setTrainerStat(k, v, fromInput) {
+  const n = Math.max(0, Math.min(90, v));
+  tsCtx.sheet.stats[k] = n;
+  const box = document.querySelector(`#tsStats [data-ts="${k}"]`);
+  if (!box) return;
+  box.querySelector('.value').textContent = n;
+  box.querySelector('.crit-corner').textContent = roundStatus(n * 0.1);
+  const input = box.querySelector('.ts-val');
+  if (input && (!fromInput || String(n) !== input.value)) input.value = n;
+}
+function onTrainerStatsClick(ev) {
+  const step = ev.target.closest('[data-ts-step]');
+  if (step) { const k = tsCtx.editing; setTrainerStat(k, tsCtx.sheet.stats[k] + parseInt(step.dataset.tsStep, 10)); return; }
+  if (ev.target.closest('.ts-edit')) return;
+  const box = ev.target.closest('[data-ts]');
+  if (!box) return;
+  tsCtx.editing = tsCtx.editing === box.dataset.ts ? null : box.dataset.ts;
+  renderTrainerSheet();
+}
+function onTrainerStatInput(ev) {
+  if (!ev.target.matches('.ts-val')) return;
+  const digits = ev.target.value.replace(/\D/g, '');
+  if (digits !== ev.target.value) ev.target.value = digits;
+  if (digits === '') return;   // an empty box stays empty while typing
+  setTrainerStat(tsCtx.editing, parseInt(digits, 10), true);
+}
+function onTrainerStatKey(ev) {
+  if (!ev.target.matches('.ts-val')) return;
+  const k = tsCtx.editing;
+  if (ev.key === 'ArrowUp' || ev.key === 'ArrowDown') { ev.preventDefault(); setTrainerStat(k, tsCtx.sheet.stats[k] + (ev.key === 'ArrowUp' ? 1 : -1)); }
+  else if (ev.key === 'Enter' || ev.key === 'Escape') { tsCtx.editing = null; renderTrainerSheet(); }
+}
+function openTrainerArtModal() {
+  if (!tsCtx) return;
+  const t = trainerOf(tsCtx.key);
+  showMonArtModal({
+    art: tsCtx.sheet.art, crop: tsCtx.crop,
+    title: 'Imagem da ficha do treinador', clearLabel: 'Usar o ícone do personagem',
+    intro: 'Aparece na ficha do treinador. Pode ser uma ilustração em alta resolução; o ícone pequeno continua o mesmo.',
+    fallback: 'Sem imagem própria: usa o ícone do personagem.',
+    preview: a => trainerArtLook(a),
+    done: (a, c) => { if (!tsCtx) return; tsCtx.sheet.art = a; tsCtx.crop = a && a.data ? c : null; renderTrainerArt(); }
+  });
+}
+async function saveTrainerSheet() {
+  if (!tsCtx) return;
+  const s = tsCtx.sheet;
+  s.notes = document.getElementById('tsNotes').value;
+  const btn = document.getElementById('tsSaveBtn');
+  btn.disabled = true;
+  try {
+    const art = s.art && s.art.data ? { id: await uploadImageData(s.art.data), pixel: !!s.art.pixel } : (s.art || null);
+    const body = { sheet: { stats: s.stats, notes: s.notes, art } };
+    const path = tsCtx.key === currentTrainer ? '/me/sheet' : '/members/' + encodeURIComponent(tsCtx.key) + '/sheet';
+    const key = tsCtx.key;
+    const r = await API.call('PUT', path, body);
+    if (key === currentTrainer) mySheet = r.sheet;
+    await refreshState();
+    if (tsCtx && tsCtx.key === key) openTrainerSheet(key);   // stays open, showing what was saved
+  } catch (e) { alert(errMsg(e)); }
+  finally { btn.disabled = false; }
+}
+
 // a data: URL picture → media file on the server; returns its id
 async function uploadImageData(dataUrl) {
   const blob = await (await fetch(dataUrl)).blob();
@@ -4187,6 +4414,7 @@ function updateBattleNotice() {
 }
 
 function setBattleMode(on, battleId) {
+  if (tsCtx) { tsCtx = null; document.getElementById('trainerSheetHost').style.display = 'none'; }
   battleMode = on;
   battleForm = null;
   if (on) {
@@ -4283,6 +4511,7 @@ function renderSidebar() {
       if (!own.length) html += '<div class="sb-empty">Nenhuma ficha ainda.</div>';
       own.forEach(m => { html += sidebarItem(m, {}) + sidebarMegaItem(m); });
       html += `<button class="btn small sb-add" id="sbNewBtn">+ Nova Ficha</button>`;
+      if (trainer.kind !== 'npc' && !trainer.gone) html += `<button class="btn secondary small sb-add" id="sbTrainerSheet">📜 Ficha do treinador</button>`;
       if (trainer.kind === 'npc') html += `<button class="btn secondary small sb-add" id="sbEditNpc">Editar NPC</button>`;
       if (trainer.kind === 'player' && !trainer.gone) html += `<button class="btn danger small sb-add" id="sbKick">Expulsar da campanha</button>`;
     } else {
@@ -4290,10 +4519,13 @@ function renderSidebar() {
       if (!mons.length) html += '<div style="font-size:0.8rem;color:var(--ink-soft);margin-bottom:8px;">Nenhuma ficha ainda.</div>';
       mons.forEach(m => { html += sidebarItem(m, {}) + sidebarMegaItem(m); });
       html += `<button class="btn small sb-add" id="sbNewBtn">+ Nova Ficha</button>`;
+      html += `<button class="btn secondary small sb-add" id="sbTrainerSheet">📜 Minha ficha de treinador</button>`;
     }
     sb.innerHTML = html;
     const closeBtn = document.getElementById('sbCloseTrainer');
     if (closeBtn) closeBtn.addEventListener('click', () => { selectedTrainerKey = null; renderSidebar(); });
+    const tsBtn = document.getElementById('sbTrainerSheet');
+    if (tsBtn) tsBtn.addEventListener('click', () => openTrainerSheet(trainer ? trainer.key : currentTrainer));
     const kickBtn = document.getElementById('sbKick');
     if (kickBtn) kickBtn.addEventListener('click', () => openKickModal(trainer));
     const editBtn = document.getElementById('sbEditNpc');
@@ -4483,6 +4715,7 @@ function applyState(st) {
     if (session) { session.roomName = st.room.name; saveSessionLocal(session); }
   }
   roomBanned = (st.room && st.room.banned) || [];
+  mySheet = (st.me && st.me.sheet) || null;
   allMons = (st.pokemon || []).map(withoutLegacyMega);
   allTeams = st.teams || [];
   allMembers = st.members || [];
@@ -4522,6 +4755,7 @@ async function refreshState() {
     if (raw === lastStateRaw) return;   // nothing changed: no redraw (keeps hover, scroll and open menus)
     applyState(st);
     renderSidebar();
+    renderTrainerHead();   // an open trainer sheet follows a new name / icon
     // don't wipe a damage amount the user is typing in the arena (it's drawn on the next answer)
     const typing = document.activeElement && document.activeElement.matches('#battleArena input');
     if (battleMode && !typing) renderBattle();
@@ -4640,6 +4874,8 @@ function showLobby() {
   closeAvatarModal();
   closeRoomModal();
   closeKickModal();
+  if (monArtCtx) closeMonArtModal();
+  tsCtx = null; document.getElementById('trainerSheetHost').style.display = 'none';
   clearTimeout(pollTimer); pollTimer = null; lastStateRaw = '';
   renderRecentRooms();
 }
@@ -4831,6 +5067,7 @@ async function init() {
     const tp = document.getElementById('teamsPanel');
     const showing = tp.style.display === 'block';
     if (battleMode) setBattleMode(false);
+    if (tsCtx) { tsCtx = null; document.getElementById('trainerSheetHost').style.display = 'none'; }
     tp.style.display = showing ? 'none' : 'block';
     document.getElementById('sheetHost').style.display = 'none';
     document.getElementById('emptyState').style.display = showing ? 'block' : 'none';
@@ -4907,7 +5144,18 @@ async function init() {
   });
   document.getElementById('bonusPop').addEventListener('click', onBonusPopClick);
 
-  document.getElementById('meAvatarBtn').addEventListener('click', () => openAvatarModal('me'));
+  document.getElementById('meAvatarBtn').addEventListener('click', () => openTrainerSheet(currentTrainer));
+  document.getElementById('tsCharBtn').addEventListener('click', () => openAvatarModal('me'));
+  document.getElementById('tsCloseBtn').addEventListener('click', closeTrainerSheet);
+  document.getElementById('tsCancelBtn').addEventListener('click', closeTrainerSheet);
+  document.getElementById('tsSaveBtn').addEventListener('click', saveTrainerSheet);
+  document.getElementById('tsArtBtn').addEventListener('click', openTrainerArtModal);
+  const tsStats = document.getElementById('tsStats');
+  tsStats.addEventListener('click', onTrainerStatsClick);
+  tsStats.addEventListener('input', onTrainerStatInput);
+  tsStats.addEventListener('keydown', onTrainerStatKey);
+  // leaving a Status box empty puts its value back
+  tsStats.addEventListener('focusout', (e) => { if (tsCtx && e.target.matches('.ts-val') && e.target.value === '') e.target.value = tsCtx.sheet.stats[tsCtx.editing] ?? 0; });
   document.getElementById('avUploadBtn').addEventListener('click', () => document.getElementById('avFile').click());
   document.getElementById('avFile').addEventListener('change', async (e) => {
     const file = e.target.files && e.target.files[0];
