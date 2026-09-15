@@ -125,8 +125,16 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   Dynamax comum fica 28% maior com aura vermelha
 - **Mega Evolução / Battle Bound**: o botão com o símbolo da Mega no topo da ficha (todos os
   Pokémon) só **escolhe qual Mega a ficha pode usar** — `mega` = `''`, o nome de uma Mega oficial
-  (`'Mega Charizard X'`) ou `'bb'` (Battle Bound: a Mega do RPG, com golpe e passiva de assinatura
-  criados à mão nos campos que já existem — não puxa nada). A ficha fica sempre na forma normal.
+  (`'Mega Charizard X'`) ou `'bb'` (Battle Bound: a Mega do RPG, com golpe e passiva de assinatura).
+  A ficha fica sempre na forma normal. Escolher a Mega **cria a ficha da Mega**, presa ao Pokémon
+  (`megaSheet = { ability, moves }` dentro da própria ficha, limpa por `cleanMegaSheet` no servidor):
+  a ability e os golpes que ele usa Mega Evoluído — onde vão a passiva e o golpe de assinatura do
+  Battle Bound sem mexer na ficha normal. Começa com a ability da Mega oficial (Battle Bound: vazia)
+  e uma cópia dos golpes. Na ficha aparecem as abas "Ficha | <Mega>" (`sheetMega`, `renderSheetTabs`);
+  na ficha da Mega só ability e golpes são editáveis (Status = ficha +10%, nível/nature/distribuição
+  vêm da normal, `megaViewOf`). Na barra lateral ela aparece presa embaixo do Pokémon
+  (`sidebarMegaItem`). "Sem Mega" apaga a ficha da Mega (pergunta antes). Na batalha, com a Mega
+  ativa, entram a ability e os golpes dela (`battleAbilityOf`, `battleMovesOf`).
   **Quem ativa é o Mestre, na batalha**: `PATCH /api/battles/:id { mega: { side, monId, t1, t2,
   ability, hp, maxHp } }` (só o Pokémon em campo, **uma por lado por batalha**, desfazível com
   `{ side, clear: true, hp, maxHp }`). Ativa, fica em `battle.mega = { form, t1, t2, ability }` da

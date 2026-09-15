@@ -593,13 +593,24 @@ async function isValidOwner(roomId, owner) {
   return (await store.listMembers(roomId)).some(x => x.name === owner);
 }
 
+/* The Mega's own sheet, attached to the ficha: the ability and moves it uses while Mega-evolved
+   (a Battle Bound's signature passive/move). Everything else comes from the ficha itself. */
+function cleanMegaSheet(x) {
+  if (!x || typeof x !== 'object' || Array.isArray(x)) return null;
+  return {
+    ability: String(x.ability || '').slice(0, 80),
+    moves: (Array.isArray(x.moves) ? x.moves : []).filter(mv => mv && typeof mv === 'object' && !Array.isArray(mv)).slice(0, 4)
+  };
+}
+
 /* strip fields the client must not control */
 function cleanMonData(body) {
   const allowed = ['species','nickname','type1','type2','level','natureName','natureUp','natureDown',
     'base100','stage','maxStage','committed','legendary','distributed','ability','notes','moves','shiny',
-    'order','battle','teraType','mega','megaBase'];
+    'order','battle','teraType','mega','megaBase','megaSheet'];
   const out = {};
   allowed.forEach(k => { if (body[k] !== undefined) out[k] = body[k]; });
+  if (out.megaSheet !== undefined) out.megaSheet = cleanMegaSheet(out.megaSheet);
   out.updatedAt = new Date().toISOString();
   return out;
 }

@@ -354,6 +354,26 @@ body.in-room { max-width: none; padding: 12px; }
 .mega-btn { flex-shrink: 0; width: 30px; height: 30px; padding: 3px; margin-top: 2px; cursor: pointer; border: 2px solid var(--outline); background: var(--panel-deep); filter: grayscale(1) brightness(0.8); }
 .mega-btn:hover { filter: none; }
 .mega-btn.has { filter: none; background: #3a2a4a; }   /* a Mega is chosen (it only activates in battle) */
+/* the Pokémon's two sheets: tabs over the sheet, and the Mega sheet attached under it in the sidebar */
+.sheet-tabs { display: flex; gap: 4px; flex-shrink: 0; }
+.sheet-tab { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-pixel); font-size: 0.56rem; padding: 6px 10px; border: 2px solid var(--outline); background: var(--panel-deep); color: var(--ink-soft); cursor: pointer; }
+.sheet-tab:hover { color: var(--ink); }
+.sheet-tab.on { color: #fff; background: var(--panel-hi); box-shadow: inset 0 -3px 0 var(--red); }
+.sheet-tab.mega.on { background: #3a2a4a; box-shadow: inset 0 -3px 0 #f8d030; }
+.sheet-tab .mega-icon { width: 12px; height: 12px; }
+.sheet.mega-mode .points-banner { --fill: #3a2a4a; --edge: #f8d030; }
+.art-frame img.mega { filter: drop-shadow(0 0 2px #f8d030) drop-shadow(0 0 6px #f85888); }
+.stat-box .dist-note.mega { color: #f8d030; }
+.stat-box.ro, .stat-box.ro:hover { cursor: default; --edge: #5a6a7a; }
+.nature-box.ro { cursor: default; color: var(--ink-soft); }
+.header-row .header-ro { flex: 1; min-width: 0; padding: 4px 6px; }
+.sb-item.sb-mega { margin: -4px 0 6px 16px; padding: 4px 8px; gap: 6px; border-left: 3px solid #f8d030; background: #2a2236; }
+.sb-item.sb-mega.active { border-color: #f8d030; background: #3a2a4a; }
+.sb-item.sb-mega img { width: 28px; height: 28px; }
+.sb-item.sb-mega .sb-name { display: flex; align-items: center; gap: 4px; font-size: 0.5rem; color: #f8d030; }
+.sb-item.sb-mega .sb-name span { overflow: hidden; text-overflow: ellipsis; }
+.sb-item.sb-mega .sb-name .mega-icon { width: 10px; height: 10px; flex-shrink: 0; }
+.sb-item.sb-mega .sb-lvl { font-size: 0.66rem; }
 .mega-btn.open { filter: none; background: #3a2a4a; box-shadow: 0 0 0 2px #f8d030, 0 0 8px #f85888; }
 .mini-btn.mega-act { display: inline-flex; align-items: center; gap: 5px; border-color: #f8d030; color: #fff; background: #3a2a4a; }
 .mini-btn.mega-act:hover { background: #5a3a6e; box-shadow: 0 0 6px #f85888; }
@@ -727,6 +747,7 @@ body.in-room { max-width: none; padding: 12px; }
 <div class="sheet-overlay" id="sheetOverlay">
   <div class="sheet">
     <div class="sheet-topbar">
+      <div class="sheet-tabs" id="sheetTabs" hidden></div>
       <div class="sheet-owner" id="sheetOwner"></div>
       <button class="btn secondary small" id="copyImageBtn">📋 Copiar imagem</button>
       <button class="btn secondary small" id="sheetCloseBtn">✕ Fechar</button>
@@ -966,6 +987,9 @@ const GMAX = {
 // battle state has `mega = { form, t1, t2, ability }` (types/ability only for official Megas).
 // Active: +10% on every Status after distribution (crit rounding), cap 95 instead of 90; official
 // Megas also take their types, ability and sprite.
+// Choosing a Mega creates its own sheet, attached to the Pokémon (`megaSheet = { ability, moves }`):
+// the ability and moves it uses while Mega-evolved — where a Battle Bound's signature passive and move
+// go, without touching the normal sheet. Status, level, nature, Tera… still come from the Pokémon.
 const BATTLE_BOUND = 'bb';
 function megaOptions(species) {
   const dex = DEX_BY_NAME[(species || '').toLowerCase()];
@@ -986,9 +1010,31 @@ function battleTypesOf(m) {
   const bm = (m.battle || {}).mega;
   return bm && bm.form && bm.t1 ? [bm.t1, bm.t2 || ''] : [m.type1, m.type2 || ''];
 }
+// ability and moves in battle: the Mega sheet's while the Mega is active
 function battleAbilityOf(m) {
   const bm = (m.battle || {}).mega;
-  return (bm && bm.form && bm.ability) || m.ability || '';
+  if (!(bm && bm.form)) return m.ability || '';
+  return (m.megaSheet && m.megaSheet.ability) || bm.ability || m.ability || '';
+}
+function battleMovesOf(m) {
+  const bm = (m.battle || {}).mega;
+  return bm && bm.form && m.megaSheet && Array.isArray(m.megaSheet.moves) ? m.megaSheet.moves : (m.moves || []);
+}
+// A new Mega sheet: the official Mega's ability (or the Pokémon's, when PokeAPI has none) and a copy
+// of the Pokémon's moves. A fresh Battle Bound starts with no ability — its signature one is made by
+// hand; `keepAbility` (fichas that chose their Mega before Mega sheets existed) keeps the Pokémon's.
+function newMegaSheet(m, form, keepAbility) {
+  const opt = form && form !== BATTLE_BOUND ? megaOption(m.species, form) : null;
+  const ability = opt ? (opt.ability || m.ability || '') : (keepAbility ? m.ability || '' : '');
+  return { ability, moves: (m.moves || []).map(mv => ({ ...mv })) };
+}
+// The Pokémon as its Mega sheet shows it: Mega-evolved (+10% Status, the Mega's sprite and types),
+// with the Mega sheet's ability and moves
+function megaViewOf(m) {
+  const ms = m.megaSheet || newMegaSheet(m, m.mega, true);
+  const opt = m.mega !== BATTLE_BOUND ? megaOption(m.species, m.mega) : null;
+  return { ...m, type1: opt ? opt.t1 : m.type1, type2: opt ? (opt.t2 || '') : (m.type2 || ''),
+    ability: ms.ability, moves: ms.moves, battle: { mega: { form: m.mega } } };
 }
 // sprite id: the official Mega's while Mega-evolved (if PokeAPI has it), else the Pokémon's own
 function spriteIdOf(m) {
@@ -1322,6 +1368,7 @@ async function deleteNpcFromModal() {
 let draft = null;       // the mon being edited/created
 let draftId = null;     // null = new, else existing doc id
 let editingRegion = null; // 'header' | 'stat:hp' | 'nature' | 'ability' | 'move:0' | 'move:new' | null
+let sheetMega = false;    // showing the Pokémon's Mega sheet instead of its normal one
 
 function blankDraft() {
   return {
@@ -1416,11 +1463,15 @@ function populateSelect(sel, options, allowNone) {
 
 // ===== Opening the sheet =====
 // ownerKey: for a new ficha, which trainer it will belong to (GM only; defaults to yourself)
-function openSheet(mon, ownerKey) {
+// mega: open its Mega sheet (if it has a Mega)
+function openSheet(mon, ownerKey, mega) {
   // missing fields (old or partial fichas) fall back to the blank ficha's defaults
   draft = mon ? { ...blankDraft(), ...JSON.parse(JSON.stringify(mon)) } : blankDraft();
   if (!draft.distributed) draft.distributed = blankDraft().distributed;
   delete draft.battle;   // the sheet is the ficha: never shows it Mega-evolved (saving leaves the battle state alone)
+  // a Mega chosen before Mega sheets existed gets one now: same ability and moves it used until then
+  if (draft.mega && !draft.megaSheet) draft.megaSheet = newMegaSheet(draft, draft.mega, true);
+  sheetMega = !!(mega && draft.mega);
   if (!mon) draft._owner = ownerKey || currentTrainer;
   if (isGM() && !battleMode) selectedTrainerKey = mon ? mon.owner : draft._owner;   // keep the rail on this ficha's trainer
   draftId = mon ? mon.id : null;
@@ -1438,12 +1489,47 @@ function openSheet(mon, ownerKey) {
 function closeSheet() {
   document.getElementById('sheetOverlay').classList.remove('open');
   document.getElementById('sheetHost').style.display = 'none';
-  draft = null; draftId = null; editingRegion = null; selectedMonId = null;
+  draft = null; draftId = null; editingRegion = null; selectedMonId = null; sheetMega = false;
   if (battleMode) { document.getElementById('battlePanel').style.display = 'block'; renderBattle(); }
   else document.getElementById('emptyState').style.display = 'block';
   renderSidebar();
 }
 function setEditing(region) { editingRegion = (editingRegion === region) ? null : region; renderSheet(); }
+// The Pokémon's two sheets as tabs over the sheet (outside the image area), when it has a Mega
+function renderSheetTabs() {
+  const el = document.getElementById('sheetTabs');
+  if (!draft || !draft.mega) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  el.innerHTML = `<button class="sheet-tab${sheetMega ? '' : ' on'}" data-tab="base">Ficha</button>
+    <button class="sheet-tab mega${sheetMega ? ' on' : ''}" data-tab="mega" title="Ficha da Mega (ability e golpes dela)">${MEGA_ICON}${esc(megaLabel(draft.mega))}</button>`;
+  el.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => setSheetMega(b.dataset.tab === 'mega')));
+}
+function setSheetMega(on) {
+  if (sheetMega === on) return;
+  sheetMega = on && !!draft.mega;
+  editingRegion = null;
+  renderSheet(); renderSidebar();
+}
+// Picking a Mega creates its sheet and opens it; another Mega keeps the sheet (an ability that was
+// just the old Mega's follows the new one); "Sem Mega" deletes it, after asking.
+function chooseMega(value) {
+  const prev = draft.mega;
+  if (!value) {
+    if (draft.megaSheet && !confirm('Tirar a Mega apaga a ficha dela (a ability e os golpes da Mega). Continuar?')) return false;
+    draft.mega = ''; draft.megaSheet = null; sheetMega = false;
+    return true;
+  }
+  if (!draft.megaSheet) draft.megaSheet = newMegaSheet(draft, value, false);
+  else if (value !== prev) {
+    const oldOpt = prev && prev !== BATTLE_BOUND ? megaOption(draft.species, prev) : null;
+    const newOpt = value !== BATTLE_BOUND ? megaOption(draft.species, value) : null;
+    const ms = draft.megaSheet;
+    if (!ms.ability || (oldOpt && ms.ability === (oldOpt.ability || draft.ability))) ms.ability = newOpt ? (newOpt.ability || draft.ability || '') : '';
+  }
+  draft.mega = value;
+  sheetMega = true;
+  return true;
+}
 
 // GM only: who owns this ficha. A new one can be assigned to any trainer of the room;
 // an existing one keeps its owner (the server enforces the same).
@@ -1496,10 +1582,13 @@ function renderMegaPicker() {
       <button class="mega-opt${cur === BATTLE_BOUND ? ' sel' : ''}" data-mega="${BATTLE_BOUND}"><b>Battle Bound</b>
         <span class="mega-meta">Golpe e passiva de assinatura: crie nos golpes e na ability (campo "Outra")</span></button>
     </div>
-    <div class="mega-rule">A ficha fica na forma normal: a Mega só entra quando o Mestre ativa na batalha (uma por treinador em cada batalha).
-      Ativa: +10% em todos os Status depois da distribuição (arredondamento do crítico) · teto 95 · HP sem teto${opts.length ? '' : ' · esta espécie não tem Mega oficial'}</div>
+    <div class="mega-rule">Escolher cria a ficha da Mega, presa a este Pokémon: nela ficam a ability e os golpes que ele usa Mega Evoluído (a passiva e o golpe de assinatura do Battle Bound).
+      O Mestre ativa na batalha (uma por treinador em cada batalha). Ativa: +10% em todos os Status desta ficha (arredondamento do crítico) · teto 95 · HP sem teto${opts.length ? '' : ' · esta espécie não tem Mega oficial'}</div>
     <div class="mega-rule mega-preview">Com a Mega ativa: ${preview}</div>`;
-  picker.querySelectorAll('[data-mega]').forEach(btn => btn.addEventListener('click', () => { draft.mega = btn.dataset.mega; setEditing(null); }));
+  picker.querySelectorAll('[data-mega]').forEach(btn => btn.addEventListener('click', () => {
+    if (!chooseMega(btn.dataset.mega)) return;
+    editingRegion = null; renderSheet(); renderSidebar();
+  }));
   picker.querySelector('[data-close]').addEventListener('click', () => setEditing(null));
 }
 
@@ -1516,8 +1605,8 @@ function renderTeraPicker() {
 
 function applySpeciesToDraft(name) {
   const dex = DEX_BY_NAME[name.trim().toLowerCase()];
-  // another species: an official Mega it can't use is dropped (Battle Bound works for any Pokémon)
-  if (dex && draft.mega && draft.mega !== BATTLE_BOUND && !megaOption(dex.name, draft.mega)) draft.mega = '';
+  // another species: an official Mega it can't use is dropped, with its sheet (Battle Bound works for any Pokémon)
+  if (dex && draft.mega && draft.mega !== BATTLE_BOUND && !megaOption(dex.name, draft.mega)) { draft.mega = ''; draft.megaSheet = null; sheetMega = false; }
   draft.species = name;
   if (dex) {
     draft._dexId = dex.id;
@@ -1538,25 +1627,33 @@ function applySpeciesToDraft(name) {
 function renderSheet() {
   if (!draft) return;
   renderSheetOwner();
-  const fs = finalStatsFor(draft);
+  renderSheetTabs();
+  // The Mega sheet is the same Pokémon Mega-evolved (+10% Status, the Mega's sprite and types) with its
+  // own ability and moves; level, nature and the distribution are edited on the normal sheet only.
+  const mega = sheetMega && !!draft.mega;
+  const view = mega ? megaViewOf(draft) : draft;
+  const fs = finalStatsFor(view);
+  const baseFs = mega ? finalStatsFor(draft) : fs;
   const {fixed, pointsAvailable} = computeFixedAndPoints(draft);
   const spent = STAT_KEYS.reduce((s,k) => s + (draft.distributed[k]||0), 0);
   const remaining = pointsAvailable - spent;
+  document.querySelector('.sheet').classList.toggle('mega-mode', mega);
+  document.getElementById('deleteMonBtn').style.display = draftId && !mega ? 'inline-block' : 'none';   // the Mega goes away via "Sem Mega"
 
   // Artwork
   const artFrame = document.getElementById('artFrame');
-  const dexId = spriteIdOf(draft);   // always the base form: the Mega only shows up in battle
+  const dexId = spriteIdOf(view);   // the normal sheet shows the base form; the Mega sheet, the Mega
   const imgSrc = dexId ? spriteImg(dexId, draft.shiny) : null;
-  artFrame.innerHTML = imgSrc ? `<img src="${imgSrc}" alt="">` : `<span class="ph-letter">${(draft.nickname||draft.species||'?').charAt(0).toUpperCase()}</span>`;
+  artFrame.innerHTML = imgSrc ? `<img src="${imgSrc}" alt=""${mega ? ' class="mega"' : ''}>` : `<span class="ph-letter">${(draft.nickname||draft.species||'?').charAt(0).toUpperCase()}</span>`;
   document.getElementById('shinyBtn').className = 'shiny-btn' + (draft.shiny ? ' active' : '');
 
-  document.getElementById('typeBadges').innerHTML = [draft.type1, draft.type2].filter(Boolean).map(t => `<span class="badge" style="background:${TYPE_COLORS[t]||'var(--panel-alt)'};color:#fff;">${t}</span>`).join('') + teraChipHtml();
+  document.getElementById('typeBadges').innerHTML = [view.type1, view.type2].filter(Boolean).map(t => `<span class="badge" style="background:${TYPE_COLORS[t]||'var(--panel-alt)'};color:#fff;">${t}</span>`).join('') + teraChipHtml();
   document.getElementById('teraChip').addEventListener('click', () => setEditing('tera'));
   renderTeraPicker();
 
   // Header region
   const headerEl = document.getElementById('headerRegion');
-  if (editingRegion === 'header') {
+  if (editingRegion === 'header' && !mega) {
     headerEl.innerHTML = `
       <div class="header-edit-row">
         <div><label>Espécie</label><input id="hf_species" list="speciesList" value="${draft.species || ''}" placeholder="ex: Chikorita"></div>
@@ -1581,19 +1678,19 @@ function renderSheet() {
   } else {
     headerEl.innerHTML = `
       <div class="header-row">
-        <div class="editable" id="headerDisplay">
+        <div class="${mega ? 'header-ro' : 'editable'}" id="headerDisplay"${mega ? ' title="Nome, espécie e nível: na ficha normal"' : ''}>
           <div class="header-name">${esc(draft.nickname || draft.species || 'Nova Ficha')}</div>
           <div class="header-sub">${draft.species && draft.nickname ? `(${esc(draft.species)}) · ` : ''}Lvl ${draft.level}${draft.legendary ? ' · ⭐ Lendário/Pseudo' : ''}${draft.mega ? ` · <span class="mega-tag" title="Ativada pelo Mestre na batalha">${esc(megaLabel(draft.mega))}</span>` : ''}</div>
         </div>
         <button class="mega-btn${draft.mega ? ' has' : ''}${editingRegion === 'mega' ? ' open' : ''}" id="megaBtn" title="Mega Evolução / Battle Bound — escolher qual (ativa só na batalha)">${MEGA_ICON}</button>
       </div>
     `;
-    document.getElementById('headerDisplay').addEventListener('click', () => setEditing('header'));
+    if (!mega) document.getElementById('headerDisplay').addEventListener('click', () => setEditing('header'));
     document.getElementById('megaBtn').addEventListener('click', () => setEditing('mega'));
   }
 
   // Points banner
-  document.getElementById('pointsBanner').textContent = `Pontos livres pra distribuir: ${remaining}`;
+  document.getElementById('pointsBanner').textContent = mega ? 'Ficha da Mega · Status +10%' : `Pontos livres pra distribuir: ${remaining}`;
   renderMegaPicker();
 
   // Stats grid
@@ -1601,14 +1698,17 @@ function renderSheet() {
   const crit = critMarginFor(fs);
   // two columns: HP | SPE, ATK | SPA, DEF | SPD
   grid.innerHTML = ['hp', 'spe', 'atk', 'spa', 'def', 'spd'].map(k => {
-    const isEditing = editingRegion === ('stat:' + k);
+    const isEditing = !mega && editingRegion === ('stat:' + k);
     const dist = draft.distributed[k] || 0;
+    // on the Mega sheet the note under the value is what the Mega adds instead of the distributed points
+    const note = mega ? `<div class="dist-note mega visible" title="+10% da Mega">+${fs[k] - baseFs[k]}</div>`
+      : `<div class="dist-note ${dist > 0 ? 'visible' : ''}">+${dist}</div>`;
     return `
-      <div class="stat-box ${isEditing ? 'editing' : ''}" data-stat="${k}">
+      <div class="stat-box ${isEditing ? 'editing' : ''}${mega ? ' ro' : ''}" data-stat="${k}">
         <div class="stat-top">
           <div class="label">${STAT_LABEL[k]}</div>
           <div class="value">${fs[k]}</div>
-          <div class="dist-note ${dist > 0 ? 'visible' : ''}">+${dist}</div>
+          ${note}
         </div>
         <div class="crit-corner">${crit[k]}</div>
         <div class="stat-stepper ${isEditing ? 'visible' : ''}" onclick="event.stopPropagation()">
@@ -1618,11 +1718,11 @@ function renderSheet() {
         </div>
       </div>`;
   }).join('');
-  grid.querySelectorAll('.stat-box').forEach(box => {
+  if (!mega) grid.querySelectorAll('.stat-box').forEach(box => {
     const k = box.dataset.stat;
     box.addEventListener('click', () => setEditing('stat:' + k));
   });
-  if (editingRegion && editingRegion.startsWith('stat:')) {
+  if (!mega && editingRegion && editingRegion.startsWith('stat:')) {
     const k = editingRegion.split(':')[1];
     const box = grid.querySelector(`.stat-box[data-stat="${k}"]`);
     const maxExtra = k === 'hp' ? Infinity : Math.max(0, 90 - fixed[k]);   // HP has no cap
@@ -1643,7 +1743,7 @@ function renderSheet() {
 
   // Nature region
   const natEl = document.getElementById('natureRegion');
-  if (editingRegion === 'nature') {
+  if (editingRegion === 'nature' && !mega) {
     natEl.innerHTML = `<div class="nature-table-inline"><table class="nature-table">
       <thead><tr><th>Nature</th><th>Aumenta</th><th>Diminui</th></tr></thead>
       <tbody>${NATURES.map(n => `
@@ -1660,43 +1760,47 @@ function renderSheet() {
   } else {
     const natText = draft.natureName
       ? (draft.natureUp ? `Nature: ${draft.natureName} (+${STAT_LABEL[draft.natureUp]} / -${STAT_LABEL[draft.natureDown]})` : `Nature: ${draft.natureName} (neutra)`)
-      : 'Clique pra escolher a Nature';
-    natEl.innerHTML = `<div class="nature-box">${natText}</div>`;
-    natEl.querySelector('.nature-box').addEventListener('click', () => setEditing('nature'));
+      : (mega ? 'Nature: na ficha normal' : 'Clique pra escolher a Nature');
+    natEl.innerHTML = `<div class="nature-box${mega ? ' ro' : ''}">${natText}</div>`;
+    if (!mega) natEl.querySelector('.nature-box').addEventListener('click', () => setEditing('nature'));
   }
 
-  // Ability region
+  // Ability region — on the Mega sheet, the Mega's: the official one as a button, or the Battle
+  // Bound's signature passive typed by hand
   const abEl = document.getElementById('abilityRegion');
-  const typeColor = TYPE_COLORS[draft.type1] || 'var(--frame-light)';
-  const abOpts = abilityOptions(draft.species);
-  const abCur = abOpts.find(o => o.name === draft.ability);
+  const abHolder = mega ? draft.megaSheet : draft;
+  const typeColor = TYPE_COLORS[view.type1] || 'var(--frame-light)';
+  const megaOpt = mega && draft.mega !== BATTLE_BOUND ? megaOption(draft.species, draft.mega) : null;
+  const abOpts = mega ? (megaOpt && megaOpt.ability ? [{ name: megaOpt.ability, tag: 'Mega' }] : []) : abilityOptions(draft.species).map(o => ({ ...o, tag: o.hidden ? 'Secreta' : '' }));
+  const abCur = abOpts.find(o => o.name === abHolder.ability);
   if (editingRegion === 'ability') {
     // the species' own abilities (hidden one included) as buttons, plus a free field for anything else
-    const chips = abOpts.map(o => `<button class="ab-opt${o.name === draft.ability ? ' sel' : ''}" data-ab="${esc(o.name)}" title="${esc(ABILITIES[o.name] || '')}">${esc(o.name)}${o.hidden ? ' <span class="ab-tag">Secreta</span>' : ''}</button>`).join('');
-    abEl.innerHTML = `<div class="ability-box"><div class="type-strip" style="--strip-color:${typeColor}">ABILITY</div><div class="box-body">
+    const chips = abOpts.map(o => `<button class="ab-opt${o.name === abHolder.ability ? ' sel' : ''}" data-ab="${esc(o.name)}" title="${esc(ABILITIES[o.name] || '')}">${esc(o.name)}${o.tag ? ` <span class="ab-tag">${o.tag}</span>` : ''}</button>`).join('');
+    const placeholder = chips ? 'Outra (digite)' : (mega && draft.mega === BATTLE_BOUND ? 'Passiva de assinatura (digite)' : 'ex: Overgrow');
+    abEl.innerHTML = `<div class="ability-box"><div class="type-strip" style="--strip-color:${typeColor}">${mega ? 'ABILITY DA MEGA' : 'ABILITY'}</div><div class="box-body">
       ${chips ? `<div class="ab-opts">${chips}</div>` : ''}
-      <input id="abilityInput" list="abilityList" value="${esc(abCur ? '' : (draft.ability || ''))}" placeholder="${chips ? 'Outra (digite)' : 'ex: Overgrow'}">
+      <input id="abilityInput" list="abilityList" value="${esc(abCur ? '' : (abHolder.ability || ''))}" placeholder="${placeholder}">
     </div></div>`;
     const inp = document.getElementById('abilityInput');
     abEl.querySelectorAll('.ab-opt').forEach(btn => {
-      const pick = (e) => { e.preventDefault(); draft.ability = btn.dataset.ab; setEditing(null); };
+      const pick = (e) => { e.preventDefault(); abHolder.ability = btn.dataset.ab; setEditing(null); };
       btn.addEventListener('mousedown', pick);   // before the input loses focus and closes the box
       btn.addEventListener('click', pick);       // keyboard
     });
-    inp.addEventListener('input', (e) => { draft.ability = e.target.value; });
+    inp.addEventListener('input', (e) => { abHolder.ability = e.target.value; });
     inp.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === 'Escape') inp.blur(); });
     inp.addEventListener('blur', () => setEditing(null));
     setTimeout(() => inp.focus({ preventScroll: true }), 0);   // keep the buttons in view on short screens
   } else {
-    const desc = ABILITIES[draft.ability];
-    abEl.innerHTML = `<div class="ability-box"><div class="type-strip" style="--strip-color:${typeColor}">ABILITY</div><div class="box-body">${draft.ability
-      ? `<div class="ab-name">${esc(draft.ability)}${abCur && abCur.hidden ? ' <span class="ab-tag">Secreta</span>' : ''}</div>${desc ? `<div class="ab-desc">${esc(desc)}</div>` : ''}`
-      : '<span style="color:var(--ink-soft)">Clique pra definir</span>'}</div></div>`;
+    const desc = ABILITIES[abHolder.ability];
+    abEl.innerHTML = `<div class="ability-box"><div class="type-strip" style="--strip-color:${typeColor}">${mega ? 'ABILITY DA MEGA' : 'ABILITY'}</div><div class="box-body">${abHolder.ability
+      ? `<div class="ab-name">${esc(abHolder.ability)}${abCur && abCur.tag ? ` <span class="ab-tag">${abCur.tag}</span>` : ''}</div>${desc ? `<div class="ab-desc">${esc(desc)}</div>` : ''}`
+      : `<span style="color:var(--ink-soft)">${mega && draft.mega === BATTLE_BOUND ? 'Clique pra criar a passiva de assinatura' : 'Clique pra definir'}</span>`}</div></div>`;
     abEl.querySelector('.ability-box').addEventListener('click', () => setEditing('ability'));
   }
 
   // Weaknesses / resistances (where the notes used to be; `notes` is still kept in the ficha)
-  document.getElementById('matchupRegion').innerHTML = matchupHtml(draft.type1, draft.type2);
+  document.getElementById('matchupRegion').innerHTML = matchupHtml(view.type1, view.type2);
 
   renderMovesRegion();
 }
@@ -1720,8 +1824,9 @@ function renderEvoNote(container) {
 
 function renderMovesRegion() {
   const el = document.getElementById('movesRegion');
+  const holder = sheetMega && draft.mega ? draft.megaSheet : draft;   // the Mega sheet has its own moves
   let html = '<div class="moves-grid">';
-  (draft.moves || []).forEach((mv, idx) => {
+  (holder.moves || []).forEach((mv, idx) => {
     const key = 'move:' + idx;
     const moveColor = mv.type ? (TYPE_COLORS[mv.type] || '') : '';
     const colorStyle = moveColor ? `style="--move-color:${moveColor}"` : '';
@@ -1753,7 +1858,7 @@ function renderMovesRegion() {
     }
   });
   if (editingRegion === 'move:new') {
-    const nm = draft._newMove || {};
+    const nm = holder._newMove || {};
     const moveColor = nm.type ? (TYPE_COLORS[nm.type] || '') : '';
     const colorStyle = moveColor ? `style="--move-color:${moveColor}"` : '';
     html += `<div class="move-card editing" ${colorStyle}>
@@ -1771,12 +1876,12 @@ function renderMovesRegion() {
     </div>`;
   }
   if (editingRegion !== 'move:new') {
-    const emptySlots = 4 - (draft.moves || []).length;
+    const emptySlots = 4 - (holder.moves || []).length;
     for (let i = 0; i < emptySlots; i++) {
       html += `<div class="move-card-add" data-slot="${i}">+ Adicionar golpe</div>`;
     }
-  } else if ((draft.moves || []).length < 4) {
-    const emptySlots = 4 - (draft.moves || []).length - 1;
+  } else if ((holder.moves || []).length < 4) {
+    const emptySlots = 4 - (holder.moves || []).length - 1;
     for (let i = 0; i < emptySlots; i++) {
       html += `<div class="move-card-add" data-slot="${i}" style="opacity:0.4;pointer-events:none;">+ Adicionar golpe</div>`;
     }
@@ -1792,7 +1897,7 @@ function renderMovesRegion() {
     }
   });
   el.querySelectorAll('.move-card-add[data-slot]').forEach(card => {
-    card.addEventListener('click', () => { editingRegion = 'move:new'; draft._newMove = {name:'', category:'Physical', type:'Normal', power:null, dice:null, acc:100, prio:0, eff:null, desc:'', custom:false}; renderSheet(); });
+    card.addEventListener('click', () => { editingRegion = 'move:new'; holder._newMove = {name:'', category:'Physical', type:'Normal', power:null, dice:null, acc:100, prio:0, eff:null, desc:'', custom:false}; renderSheet(); });
   });
 
   // Wire up editing card(s)
@@ -1803,7 +1908,7 @@ function renderMovesRegion() {
     populateSelect(typeSel, TYPES, false);
     const nameInput = card.querySelector('.mv_name');
     const descInput = card.querySelector('.mv_desc');
-    const currentMv = isNew ? draft._newMove : draft.moves[parseInt(idxAttr)];
+    const currentMv = isNew ? holder._newMove : holder.moves[parseInt(idxAttr)];
     if (currentMv && currentMv.custom) {
       card.querySelector('.mv_m_category').value = currentMv.category || 'Physical';
       typeSel.value = currentMv.type || 'Normal';
@@ -1815,8 +1920,8 @@ function renderMovesRegion() {
       let newMv;
       if (found) newMv = {...found, name: e.target.value, custom: false, desc: found.desc};
       else newMv = {name: e.target.value, category: 'Physical', type: 'Normal', power: null, dice: null, acc: 100, prio: 0, eff: null, desc: descInput.value, custom: true};
-      if (isNew) draft._newMove = newMv;
-      else draft.moves[parseInt(idxAttr)] = newMv;
+      if (isNew) holder._newMove = newMv;
+      else holder.moves[parseInt(idxAttr)] = newMv;
       const caretPos = e.target.selectionStart;
       renderSheet();
       const sel = isNew ? '.move-card.editing .mv_name' : `.move-card[data-idx="${idxAttr}"] .mv_name`;
@@ -1824,22 +1929,22 @@ function renderMovesRegion() {
       if (el2) { el2.focus(); el2.setSelectionRange(caretPos, caretPos); }
     });
     const catSel = card.querySelector('.mv_m_category');
-    if (catSel) catSel.addEventListener('change', (e) => { const mv = isNew ? draft._newMove : draft.moves[parseInt(idxAttr)]; if(mv) mv.category = e.target.value; });
-    if (typeSel) typeSel.addEventListener('change', (e) => { const mv = isNew ? draft._newMove : draft.moves[parseInt(idxAttr)]; if(mv){ mv.type = e.target.value; renderSheet(); } });
+    if (catSel) catSel.addEventListener('change', (e) => { const mv = isNew ? holder._newMove : holder.moves[parseInt(idxAttr)]; if(mv) mv.category = e.target.value; });
+    if (typeSel) typeSel.addEventListener('change', (e) => { const mv = isNew ? holder._newMove : holder.moves[parseInt(idxAttr)]; if(mv){ mv.type = e.target.value; renderSheet(); } });
     const powInput = card.querySelector('.mv_m_power');
-    if (powInput) powInput.addEventListener('input', (e) => { const mv = isNew ? draft._newMove : draft.moves[parseInt(idxAttr)]; if(mv){ const p=parseInt(e.target.value)||null; mv.power=p; mv.dice = p?Math.floor(p/2):null; } });
+    if (powInput) powInput.addEventListener('input', (e) => { const mv = isNew ? holder._newMove : holder.moves[parseInt(idxAttr)]; if(mv){ const p=parseInt(e.target.value)||null; mv.power=p; mv.dice = p?Math.floor(p/2):null; } });
     const accInput = card.querySelector('.mv_m_acc');
-    if (accInput) accInput.addEventListener('input', (e) => { const mv = isNew ? draft._newMove : draft.moves[parseInt(idxAttr)]; if(mv) mv.acc = e.target.value ? parseInt(e.target.value) : null; });
-    descInput.addEventListener('input', (e) => { const mv = isNew ? draft._newMove : draft.moves[parseInt(idxAttr)]; if(mv) mv.desc = e.target.value; });
+    if (accInput) accInput.addEventListener('input', (e) => { const mv = isNew ? holder._newMove : holder.moves[parseInt(idxAttr)]; if(mv) mv.acc = e.target.value ? parseInt(e.target.value) : null; });
+    descInput.addEventListener('input', (e) => { const mv = isNew ? holder._newMove : holder.moves[parseInt(idxAttr)]; if(mv) mv.desc = e.target.value; });
 
     const removeBtn = card.querySelector('.mv_remove');
-    if (removeBtn) removeBtn.addEventListener('click', () => { draft.moves.splice(parseInt(idxAttr), 1); editingRegion = null; renderSheet(); });
+    if (removeBtn) removeBtn.addEventListener('click', () => { holder.moves.splice(parseInt(idxAttr), 1); editingRegion = null; renderSheet(); });
     const doneBtn = card.querySelector('.mv_done');
     if (doneBtn) doneBtn.addEventListener('click', () => { editingRegion = null; renderSheet(); });
     const doneNewBtn = card.querySelector('.mv_done_new');
     if (doneNewBtn) doneNewBtn.addEventListener('click', () => {
-      if (draft._newMove && draft._newMove.name) { draft.moves = draft.moves || []; draft.moves.push(draft._newMove); }
-      draft._newMove = null; editingRegion = null; renderSheet();
+      if (holder._newMove && holder._newMove.name) { holder.moves = holder.moves || []; holder.moves.push(holder._newMove); }
+      holder._newMove = null; editingRegion = null; renderSheet();
     });
   });
 }
@@ -1863,7 +1968,7 @@ async function copySheetAsImage() {
         // Fallback: trigger a download instead
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.download = `${(draft.nickname || draft.species || 'ficha').replace(/\s+/g,'_')}.png`;
+        a.href = url; a.download = `${(draft.nickname || draft.species || 'ficha').replace(/\s+/g,'_')}${sheetMega ? '_mega' : ''}.png`;
         document.body.appendChild(a); a.click(); a.remove();
         URL.revokeObjectURL(url);
         btn.textContent = '⬇ Baixado (sem permissão de área de transferência)';
@@ -1887,14 +1992,17 @@ async function saveSheet() {
     legendary: draft.legendary, distributed: draft.distributed, ability: draft.ability, notes: draft.notes || '',
     moves: (draft.moves || []).map(m => ({...m})), shiny: !!draft.shiny, teraType: draft.teraType || '',
     mega: draft.mega || '',
+    megaSheet: draft.mega && draft.megaSheet
+      ? { ability: draft.megaSheet.ability || '', moves: (draft.megaSheet.moves || []).map(m => ({...m})) } : null,
     updatedAt: new Date().toISOString()
   };
   try {
     const owner = (!draftId && isGM()) ? draft._owner : undefined;
+    const wasMega = sheetMega;
     const saved = await API.savePokemon({ ...data, id: draftId || undefined, owner });
     await refreshState();
     const fresh = allMons.find(m => m.id === saved.id);
-    if (fresh) openSheet(fresh); else closeSheet();
+    if (fresh) openSheet(fresh, undefined, wasMega); else closeSheet();
   } catch (e) { alert(errMsg(e)); }
 }
 
@@ -2219,7 +2327,7 @@ function movePanelHtml(pos, m, control, heading, showChart, ctx) {
   const name = esc(m.nickname || m.species);
   const dmaxKind = (m.battle || {}).dmax;
   // while dynamaxed every move shows as its Max Move, with the damage roll doubled
-  const moves = (m.moves || []).map(mv => (dmaxKind && mv && mv.name ? maxMoveFor(mv, m, dmaxKind === 'gmax') : mv));
+  const moves = battleMovesOf(m).map(mv => (dmaxKind && mv && mv.name ? maxMoveFor(mv, m, dmaxKind === 'gmax') : mv));   // the Mega sheet's while Mega-evolved
   const sel = battleMsg[pos];
   const cells = Array.from({ length: 4 }, (_, i) => {
     const mv = moves[i];
@@ -3111,7 +3219,7 @@ function onBattleClick(ev) {
     const cur = ((openBattle() || {}).mega || {})[el.dataset.side];
     if (cur && confirm('Desfazer a Mega deste treinador? Os Status voltam ao normal.')) battleMega(el.dataset.side, cur.mon, false);
   }
-  else if (act === 'sheet') { const mon = monById(id); if (mon) openSheet(mon); }
+  else if (act === 'sheet') { const mon = monById(id); if (mon) openSheet(mon, undefined, !!megaFormOf(mon)); }   // Mega-evolved: its Mega sheet
 }
 function onBattleChange(ev) {
   const sel = ev.target.closest('select[data-bt-side]');
@@ -3231,13 +3339,13 @@ function renderSidebar() {
         <button class="sb-tbtn" id="sbCloseTrainer" title="Fechar">✕</button>
       </div>`;
       if (!own.length) html += '<div class="sb-empty">Nenhuma ficha ainda.</div>';
-      own.forEach(m => { html += sidebarItem(m, {}); });
+      own.forEach(m => { html += sidebarItem(m, {}) + sidebarMegaItem(m); });
       html += `<button class="btn small sb-add" id="sbNewBtn">+ Nova Ficha</button>`;
       if (trainer.kind === 'npc') html += `<button class="btn secondary small sb-add" id="sbEditNpc">Editar NPC</button>`;
     } else {
       html += `<div class="sb-group-title">Meus Pokémon</div>`;
       if (!mons.length) html += '<div style="font-size:0.8rem;color:var(--ink-soft);margin-bottom:8px;">Nenhuma ficha ainda.</div>';
-      mons.forEach(m => { html += sidebarItem(m, {}); });
+      mons.forEach(m => { html += sidebarItem(m, {}) + sidebarMegaItem(m); });
       html += `<button class="btn small sb-add" id="sbNewBtn">+ Nova Ficha</button>`;
     }
     sb.innerHTML = html;
@@ -3253,7 +3361,8 @@ function renderSidebar() {
   sb.querySelectorAll('.sb-item').forEach(el => {
     el.addEventListener('click', () => {
       const mon = allMons.find(m => m.id === el.dataset.id);
-      if (mon) openSheet(mon);
+      // the attached Mega item opens the Mega sheet; in battle, so does a Pokémon that is Mega-evolved
+      if (mon) openSheet(mon, undefined, el.dataset.mega === '1' || (battleMode && !!megaFormOf(mon)));
     });
   });
   const nb = document.getElementById('sbNewBtn');
@@ -3264,7 +3373,8 @@ function sidebarItem(m, opts) {
   opts = opts || {};
   const dexId = spriteIdOf(m);
   const imgSrc = dexId ? spriteImg(dexId, m.shiny) : null;
-  const active = selectedMonId === m.id ? ' active' : '';
+  const megaItem = !opts.slot && m.mega;   // the lists outside battle show the Mega sheet as its own item
+  const active = selectedMonId === m.id && !(sheetMega && megaItem) ? ' active' : '';
   const field = opts.field ? ' field' : '';
   const hpInfo = battleMode ? `<div class="sb-lvl">${curHpOf(m)}/${maxHpOf(m)} HP</div>` : `<div class="sb-lvl">Lv ${m.level}${m.shiny ? ' ✦' : ''}</div>`;
   return `<div class="sb-item${active}${field}" data-id="${m.id}"${opts.field ? ' title="Em campo"' : ''}>
@@ -3273,6 +3383,20 @@ function sidebarItem(m, opts) {
     <div class="sb-txt">
       <div class="sb-name">${esc(m.nickname || m.species)}</div>
       ${hpInfo}
+    </div>
+  </div>`;
+}
+
+// The Mega sheet, attached right under its Pokémon
+function sidebarMegaItem(m) {
+  if (!m.mega) return '';
+  const dexId = spriteIdOf(megaViewOf(m));
+  const active = selectedMonId === m.id && sheetMega ? ' active' : '';
+  return `<div class="sb-item sb-mega${active}" data-id="${m.id}" data-mega="1" title="Ficha da Mega de ${esc(m.nickname || m.species)}">
+    ${dexId ? `<img src="${spriteImg(dexId, m.shiny)}" alt="">` : ''}
+    <div class="sb-txt">
+      <div class="sb-name">${MEGA_ICON}<span>${esc(megaLabel(m.mega))}</span></div>
+      <div class="sb-lvl">ficha da Mega</div>
     </div>
   </div>`;
 }
