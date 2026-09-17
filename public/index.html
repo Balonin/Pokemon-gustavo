@@ -2059,9 +2059,11 @@ function blankDraft() {
   };
 }
 
+// x is usually Status × 0.1, which floating point can leave a hair under the real value
+// (86 × 0.1 = 8.5999…): round that noise away before comparing the fraction
 function roundStatus(x) {
-  const f = Math.floor(x);
-  return (x - f) >= 0.6 ? f + 1 : f;
+  const f = Math.floor(x + 1e-9);
+  return Math.round((x - f) * 1e6) >= 600000 ? f + 1 : f;
 }
 function evoStepsFor(maxStage, isSpecial) {
   if (maxStage === 0) return [{stat: isSpecial ? 15 : 10, pts: 5}];
