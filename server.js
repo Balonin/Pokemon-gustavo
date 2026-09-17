@@ -642,6 +642,7 @@ function logForPlayer(b, you, byId) {
         if (e.why) out.why = e.why;
       }
       if (/^(weather|terrain)(-end)?$/.test(e.k)) out.kind = e.kind;
+      if (/^hazard/.test(e.k)) { if (e.kind) out.kind = e.kind; if (e.layers) out.layers = e.layers; }
       if (e.k === 'stage') Object.assign(out, { stat: e.stat, delta: e.delta, now: e.now });
       if (e.k === 'end') out.winner = e.winner;
       if (e.k === 'status') Object.assign(out, { status: e.status, was: e.was });
@@ -695,10 +696,42 @@ function applyFieldEffect(data, key, kinds, body) {
   pushLog(data, { k: key, kind: body.kind });
   return true;
 }
+/* Entry hazards: they sit on one side of the field and hit whatever comes in on that side, like the
+   games. data.hazards[side] = { sr: 1, spikes: 3, tspikes: 2, web: 1, steelsurge: 1 } — only what is set,
+   each one up to its number of layers. Public to everyone (it goes in battleHeader); the names, the
+   effects and the damage live in the frontend (HAZARD). */
+const HAZARD_LAYERS = { sr: 1, spikes: 3, tspikes: 2, web: 1, steelsurge: 1 };
+// body: { side, kind, layers } sets a hazard, { side, kind, delta } adds/removes layers,
+// { side, kind, clear: true } takes that one off and { side, clear: 'all' } sweeps the side (Rapid Spin, Defog)
+function applyHazard(data, body) {
+  const side = body.side;
+  if (!SIDES.includes(side)) return false;
+  data.hazards = data.hazards || { a: {}, b: {} };
+  const cur = { ...(data.hazards[side] || {}) };
+  if (body.clear === 'all') {
+    if (Object.keys(cur).length) { data.hazards[side] = {}; pushLog(data, { k: 'hazard-clear', side }); }
+    return true;
+  }
+  const kind = body.kind;
+  if (!Object.prototype.hasOwnProperty.call(HAZARD_LAYERS, kind)) return false;
+  const max = HAZARD_LAYERS[kind], was = cur[kind] || 0;
+  let layers;
+  if (body.clear) layers = 0;
+  else if (body.delta !== undefined) layers = was + (parseInt(body.delta, 10) || 0);
+  else if (body.layers !== undefined) layers = parseInt(body.layers, 10) || 0;
+  else layers = was + 1;
+  layers = Math.max(0, Math.min(max, layers));
+  if (layers === was) return true;
+  if (layers) cur[kind] = layers; else delete cur[kind];
+  data.hazards[side] = cur;
+  pushLog(data, layers ? { k: 'hazard', side, kind, layers } : { k: 'hazard-end', side, kind });
+  return true;
+}
+
 // why an HP change happened, when it's end-of-turn damage/healing (goes to the log)
 // ('residual' = the plain fraction buttons: Leech Seed, Curse, Leftovers…). A damaging HP change without a
 // reason is a move's hit — that's what breaks an Illusion.
-const RESIDUAL_REASONS = ['sand', 'hail', 'brn', 'psn', 'tox', 'grassy', 'residual'];
+const RESIDUAL_REASONS = ['sand', 'hail', 'brn', 'psn', 'tox', 'grassy', 'sr', 'spikes', 'steelsurge', 'residual'];
 
 // What a transformation copies (sent by the GM's client), cleaned: { transform, stages } or null
 function cleanTransform(x) {
@@ -755,7 +788,7 @@ function publicSideView(b, s, byId) {
       const bt = p.battle || {}, ff = (b.faintForm || {})[real.id] || {};
       return {
         species: p.species, nickname: p.nickname || '', level: p.level, shiny: !!p.shiny, megaActive: megaActiveOf(p) || ff.mega || '',
-        fainted: hpPct(p) === 0, active: real.id === b.active[s],
+        fainted: hpPct(p) === 0, active: real.id === b.active[s], hpPct: hpPct(p),
         tera: teraOf(b, s, real.id), dmax: bt.dmax === 'gmax' || bt.dmax === 'dmax' ? bt.dmax : (ff.dmax || null),
         transformSprite: (bt.transform && bt.transform.spriteId) || ff.transformSprite || null,
         art: artShownFor(p)   // for the end-of-battle art only (the arena keeps the official sprite)
@@ -765,7 +798,7 @@ function publicSideView(b, s, byId) {
 }
 function battleHeader(b, info) {
   return { id: b.id, name: b.name, status: b.status, winner: b.winner || null, createdAt: b.createdAt, endedAt: b.endedAt,
-    weather: b.weather || null, terrain: b.terrain || null,
+    weather: b.weather || null, terrain: b.terrain || null, hazards: b.hazards || { a: {}, b: {} },
     trainers: { a: info[b.sides.a.owner] || { name: '—', avatar: '' }, b: info[b.sides.b.owner] || { name: '—', avatar: '' } } };
 }
 
@@ -1357,7 +1390,7 @@ app.post('/api/battles', auth, async (req, res) => {
       active: { a: party.a[0], b: party.b[0] },
       revealed: { a: [party.a[0]], b: [party.b[0]] },   // everything that has been on the field, in order
       winner: null, tera: { a: null, b: null }, dmax: { a: null, b: null }, mega: { a: null, b: null },
-      weather: null, terrain: null, illusion: { a: null, b: null }, illusionSeen: {},
+      weather: null, terrain: null, hazards: { a: {}, b: {} }, illusion: { a: null, b: null }, illusionSeen: {},
       createdAt: new Date().toISOString(), log: []
     };
     pushLog(data, { k: 'start' });
@@ -1438,6 +1471,11 @@ app.patch('/api/battles/:id', auth, async (req, res) => {
       if (fx === undefined) continue;
       if (data.status !== 'active' || !fx || typeof fx !== 'object') return res.status(400).json({ error: 'campo_invalido' });
       if (!applyFieldEffect(data, key, key === 'weather' ? WEATHER_KINDS : TERRAIN_KINDS, fx)) return res.status(400).json({ error: 'campo_invalido' });
+    }
+    if (body.hazard !== undefined) {
+      const hz = body.hazard;
+      if (data.status !== 'active' || !hz || typeof hz !== 'object') return res.status(400).json({ error: 'armadilha_invalida' });
+      if (!applyHazard(data, hz)) return res.status(400).json({ error: 'armadilha_invalida' });
     }
     if (body.mega) {
       const side = body.mega.side;

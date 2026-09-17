@@ -625,6 +625,18 @@ body.in-room { max-width: none; padding: 12px; }
 .fx-desc { margin-top: 12px; font-size: 0.74rem; line-height: 1.5; color: var(--ink-soft); }
 .fx-desc b { font-weight: normal; color: #fff; }
 .log-line .log-fx { color: #9ed0f0; }
+/* ----- Entry hazards: a badge on each side of the field, and the picker rows ----- */
+.hz-zone { position: absolute; z-index: 2; display: flex; gap: 4px; align-items: center; }
+.hz-foe { right: 5%; top: 51%; }
+.hz-ally { left: 44%; bottom: 2%; }
+.hz-chip { display: inline-flex; align-items: center; gap: 3px; padding: 4px 5px; border: 2px solid var(--outline);
+  background: color-mix(in srgb, var(--c) 62%, #17210f); box-shadow: 0 2px 0 rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.22);
+  font-size: 0.88rem; line-height: 1; }
+.hz-chip i { font-family: var(--font-pixel); font-style: normal; font-size: 0.42rem; color: var(--gold); text-shadow: 1px 1px 0 var(--outline); }
+.fx-hz { margin-bottom: 8px; }
+.fx-hz-who { display: flex; align-items: center; gap: 6px; margin: 0 0 5px; font-size: 0.74rem; color: var(--ink-soft); }
+.fx-hz-who b { color: #fff; font-weight: normal; }
+.fx-sec small { font-family: var(--font-body); font-size: 0.68rem; color: var(--ink-soft); }
 /* end-of-turn damage row */
 .bt-res .res-btn { font-size: 0.52rem; padding: 6px 7px; }
 .res-sep { width: 2px; align-self: stretch; margin: 0 2px; background: var(--panel-hi); }
@@ -1206,10 +1218,10 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
   </div>
 </div>
 
-<!-- ===== WEATHER / TERRAIN PICKER (GM, in battle) ===== -->
+<!-- ===== WEATHER / TERRAIN / HAZARD PICKER (GM, in battle) ===== -->
 <div class="modal-backdrop" id="fieldModal" hidden>
   <div class="card modal field-modal" role="dialog" aria-modal="true" aria-labelledby="fxTitle">
-    <h2 id="fxTitle">Clima e terreno</h2>
+    <h2 id="fxTitle">Campo de batalha</h2>
     <div class="fx-dur">
       <span>Duração ao ativar</span>
       <button class="mini-btn" data-fxd="-1" title="Menos um turno">−</button>
@@ -1222,6 +1234,8 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
     <div class="fx-grid" id="fxWeather"></div>
     <div class="fx-sec">Terreno</div>
     <div class="fx-grid" id="fxTerrain"></div>
+    <div class="fx-sec">Armadilhas <small>uma camada por clique; no limite, o clique tira</small></div>
+    <div id="fxHazards"></div>
     <div class="fx-desc" id="fxDesc"></div>
     <div class="top-actions" style="margin:12px 0 0;">
       <button class="btn small" id="fxClose">Fechar</button>
@@ -1351,6 +1365,23 @@ const TERRAIN = {
     desc: 'Pokémon no chão: golpes Psíquicos ×1,3 e ficam imunes a golpes com prioridade.' }
 };
 const FIELD_TURNS_MAX = 99;
+
+// ----- Entry hazards: they stay on one side of the field and hit whatever comes in on that side -----
+// `max` = layers it stacks to; the GM lays them in the field window and the damage comes already worked
+// out in the panel of the Pokémon on that side (`residualRowHtml`).
+const HAZARD = {
+  sr: { label: 'Pedras Pontiagudas', en: 'Stealth Rock', icon: '🪨', color: '#b08a3c', max: 1, type: 'Pedra', short: 'SR',
+    desc: 'Quem entra perde 1/8 do HP, multiplicado pela fraqueza ou resistência ao tipo Pedra. Pega até quem voa.' },
+  spikes: { label: 'Espinhos', en: 'Spikes', icon: '🔻', color: '#9aa0ac', max: 3, ground: true,
+    desc: 'Quem entra no chão perde 1/8, 1/6 ou 1/4 do HP (1, 2 ou 3 camadas). Não pega quem voa nem Levitate.' },
+  tspikes: { label: 'Espinhos Tóxicos', en: 'Toxic Spikes', icon: '☠️', color: '#8a3ca8', max: 2, ground: true,
+    desc: 'Quem entra no chão fica envenenado — com 2 camadas, gravemente. Venenoso no chão limpa os espinhos ao entrar.' },
+  web: { label: 'Teia Elástica', en: 'Sticky Web', icon: '🕸️', color: '#7a9a6a', max: 1, ground: true,
+    desc: 'Quem entra no chão tem a SPE baixada em 1 estágio.' },
+  steelsurge: { label: 'Espinhos de Aço', en: 'G-Max Steelsurge', icon: '⚙️', color: '#8896a4', max: 1, type: 'Aço', short: 'Aço',
+    desc: 'Quem entra perde 1/8 do HP, multiplicado pela fraqueza ou resistência ao tipo Aço. Pega até quem voa.' }
+};
+const SPIKES_DEN = [0, 8, 6, 4];   // HP fraction by number of layers
 
 // ----- Dynamax / Gigantamax: double HP, doubled move damage, Max Moves -----
 const DMAX_COLOR = '#e0203c';
@@ -3403,13 +3434,41 @@ function sideStripHtml(side, pos, control) {
   </div>`;
 }
 
-// GM: end-of-turn damage/healing already worked out from the max HP. The ones that apply right now
-// (weather, status, Grassy Terrain) first, then plain fractions for anything else (Leech Seed, Curse…).
-// types: the ones it defends with (Tera included), for the weather immunities.
-function residualRowHtml(m, b, types) {
+// GM: the damage/healing already worked out from the max HP — first the hazards on this side, which hit
+// when a Pokémon comes onto the field, then what applies at the end of the turn (weather, status, Grassy
+// Terrain) and plain fractions for anything else (Leech Seed, Curse…).
+// types: the ones it defends with (Tera included), for the weather and hazard immunities.
+function residualRowHtml(m, b, types, side) {
   const id = esc(m.id), bt = m.battle || {};
   const btn = (label, amount, why, title, heal) =>
     `<button class="mini-btn res-btn${heal ? ' heal' : ''}" data-act="residual" data-id="${id}" data-v="${heal ? amount : -amount}"${why ? ` data-why="${why}"` : ''} title="${esc(title)}">${esc(label)} ${heal ? '+' : '−'}${amount}</button>`;
+  const off = (label, title) => `<button class="mini-btn res-btn" disabled title="${esc(title)}">${esc(label)}</button>`;
+  const name = m.nickname || m.species;
+  // Entry hazards on this Pokémon's own side, already worked out: they hit when it comes onto the field.
+  // Like the weather they are indirect damage, so they don't break an Illusion.
+  const hz = (b.hazards || {})[side] || {};
+  const entry = [];
+  const grounded = isGrounded(m, types);
+  ['sr', 'steelsurge'].filter(k => hz[k]).forEach(k => {
+    const d = HAZARD[k], mult = defenseMultiplier(d.type, types[0], types[1]);
+    entry.push(mult
+      ? btn(`${d.icon} ${d.short}`, residualOf(m, 8 / mult), k,
+        `${d.en}: 1/8 do HP ${mult === 1 ? '' : `×${MULT_LABEL[mult] || mult} (tipo ${d.type}) `}ao entrar em campo`)
+      : off(`${d.icon} imune`, `${d.en} não afeta ${name} (imune a ${d.type})`));
+  });
+  if (hz.spikes) {
+    const n = Math.min(hz.spikes, 3), den = SPIKES_DEN[n];
+    entry.push(grounded
+      ? btn(`${HAZARD.spikes.icon} Espinhos`, residualOf(m, den), 'spikes',
+        `Spikes (${n} camada${n === 1 ? '' : 's'}): 1/${den} do HP ao entrar em campo`)
+      : off(`${HAZARD.spikes.icon} não pega`, `Spikes não pega ${name}: não está no chão`));
+  }
+  if (hz.tspikes) entry.push(off(`${HAZARD.tspikes.icon} ${hz.tspikes > 1 ? 'tóxico' : 'veneno'}`,
+    grounded ? `Toxic Spikes: ${name} fica ${hz.tspikes > 1 ? 'gravemente envenenado' : 'envenenado'} ao entrar (marque a condição aí embaixo)`
+      : `Toxic Spikes não pega ${name}: não está no chão`));
+  if (hz.web) entry.push(off(`${HAZARD.web.icon} SPE −1`,
+    grounded ? `Sticky Web: ${name} entra com SPE em −1 estágio (use os estágios aí embaixo)`
+      : `Sticky Web não pega ${name}: não está no chão`));
   const now = [];
   const wx = b.weather && WEATHER[b.weather.kind];
   if (wx && wx.dmg) {
@@ -3430,7 +3489,7 @@ function residualRowHtml(m, b, types) {
   // (indirect damage: it's logged as end-of-turn and doesn't break an Illusion, unlike the −10/−5/−1/Dano hits)
   const frac = [16, 8, 4, 2].map(n => btn(`1/${n}`, residualOf(m, n), 'residual', `Tirar 1/${n} do HP máximo${n === 8 ? ' (ex.: Leech Seed, Bind, Stealth Rock neutro)' : n === 4 ? ' (ex.: Curse, Nightmare)' : ''}`)).join('')
     + [16, 2].map(n => btn(`1/${n}`, residualOf(m, n), '', `Recuperar 1/${n} do HP máximo${n === 16 ? ' (ex.: Leftovers)' : ' (ex.: Recover, Roost)'}`, true)).join('');
-  return `<div class="bt-dmg bt-res"><span class="bt-status-l" title="Dano e cura de fim de turno, já calculados pelo HP máximo">Fim de turno</span>${now.join('')}${now.length ? '<span class="res-sep"></span>' : ''}${frac}</div>`;
+  return `<div class="bt-dmg bt-res">${entry.length ? `<span class="bt-status-l" title="Armadilhas no lado dele, já calculadas pelo HP máximo">Ao entrar</span>${entry.join('')}<span class="res-sep"></span>` : ''}<span class="bt-status-l" title="Dano e cura de fim de turno, já calculados pelo HP máximo">Fim de turno</span>${now.join('')}${now.length ? '<span class="res-sep"></span>' : ''}${frac}</div>`;
 }
 
 function movePanelHtml(pos, m, control, heading, showChart, ctx) {
@@ -3544,7 +3603,7 @@ function movePanelHtml(pos, m, control, heading, showChart, ctx) {
       <button class="mini-btn" data-act="dmg-custom" data-id="${id}">Dano</button>
       <button class="mini-btn heal" data-act="heal-custom" data-id="${id}">Cura</button>
     </div>` : ''}
-    ${control && ctx ? residualRowHtml(m, ctx.b, [d1, d2].filter(Boolean)) : ''}
+    ${control && ctx ? residualRowHtml(m, ctx.b, [d1, d2].filter(Boolean), ctx.side) : ''}
     ${statusRow}
     <div class="bt-stages">${stages}</div>
     ${showChart ? matchupHtml(d1, d2, `Fraquezas de ${m.nickname || m.species}${tera ? ' (Tera ' + tera + ')' : ''}`) : ''}
@@ -3789,6 +3848,13 @@ function logText(b, e) {
     case 'weather-end': return esc((WEATHER[e.kind] || {}).end || 'O clima voltou ao normal.');
     case 'terrain': return `<b class="log-fx">${(TERRAIN[e.kind] || {}).icon || ''} ${esc(TERRAIN[e.kind] ? `Um ${TERRAIN[e.kind].label} cobriu a arena!` : 'O terreno mudou.')}</b>`;
     case 'terrain-end': return esc(TERRAIN[e.kind] ? `O ${TERRAIN[e.kind].label} sumiu.` : 'O terreno voltou ao normal.');
+    case 'hazard': {
+      const d = HAZARD[e.kind] || {};
+      const lay = e.layers > 1 ? ` (${e.layers} camadas)` : '';
+      return `<b class="log-fx">${d.icon || ''} ${esc((d.label || 'Armadilhas') + lay)} no lado de ${tn(e.side)}!</b>`;
+    }
+    case 'hazard-end': return `${esc((HAZARD[e.kind] || {}).label || 'As armadilhas')} sumiram do lado de ${tn(e.side)}.`;
+    case 'hazard-clear': return `O lado de ${tn(e.side)} ficou limpo de armadilhas.`;
     case 'faint': return `<b class="log-faint">${whose} desmaiou!</b>`;
     case 'stage': return `${STAT_LABEL[e.stat]} de ${whose} ${e.delta > 0 ? 'subiu' : 'caiu'} ${Math.abs(e.delta)} (agora ${e.now > 0 ? '+' : ''}${e.now}).`;
     case 'restore': return `${whose} foi restaurado (HP cheio e estágios zerados).`;
@@ -3871,7 +3937,37 @@ function fieldBarHtml(b, ctl) {
   const chips = (b.weather ? chip('weather', WEATHER, b.weather) : '') + (b.terrain ? chip('terrain', TERRAIN, b.terrain) : '');
   if (!chips && !ctl) return '';
   return `<div class="bt-field">${chips || '<span class="bench-empty">Sem clima nem terreno</span>'}
-    ${ctl ? '<button class="mini-btn fx-open" data-bt="field">🌦 Clima / Terreno</button>' : ''}</div>`;
+    ${ctl ? '<button class="mini-btn fx-open" data-bt="field">🌦 Clima / Terreno / Armadilhas</button>' : ''}</div>`;
+}
+// The hazards on one side of the field, over that side's ground: everyone sees them, like in the games.
+function hazardZoneHtml(b, sideKey, pos, trainer) {
+  const hz = (b.hazards || {})[sideKey] || {};
+  const chips = Object.entries(HAZARD).filter(([k]) => hz[k] > 0).map(([k, d]) => {
+    const n = Math.min(hz[k], d.max);
+    const layers = d.max > 1 ? ` (${n} camada${n === 1 ? '' : 's'})` : '';
+    return `<span class="hz-chip" style="--c:${d.color}" title="${esc(d.en)}${layers} no lado de ${esc(trainer)} — ${esc(d.desc)}">
+      <span aria-hidden="true">${d.icon}</span>${d.max > 1 ? `<i>×${n}</i>` : ''}</span>`;
+  }).join('');
+  return chips ? `<div class="hz-zone hz-${pos}" aria-label="Armadilhas no lado de ${esc(trainer)}">${chips}</div>` : '';
+}
+// GM: each click lays one more layer and, at the limit, takes the hazard off; `kind` null sweeps the
+// whole side (Rapid Spin, Defog). Shown at once; the server keeps the count.
+function hazardStep(side, kind) {
+  const b = openBattle();
+  if (!b || !isGM() || b.status !== 'active') return;
+  b.hazards = b.hazards || { a: {}, b: {} };
+  const cur = { ...(b.hazards[side] || {}) };
+  let patch;
+  if (!kind) { b.hazards[side] = {}; patch = { side, clear: 'all' }; }
+  else {
+    const max = (HAZARD[kind] || {}).max || 1;
+    const n = (cur[kind] || 0) >= max ? 0 : (cur[kind] || 0) + 1;
+    if (n) cur[kind] = n; else delete cur[kind];
+    b.hazards[side] = cur;
+    patch = n ? { side, kind, layers: n } : { side, kind, clear: true };
+  }
+  renderBattle(); renderFieldModal();
+  patchBattleRoom({ hazard: patch }).then(renderFieldModal);
 }
 // GM: −/+ on a chip (reaching 0 ends it, like the games) or ✕. Shown at once; the server keeps the count.
 function fieldStep(key, delta) {
@@ -3910,6 +4006,25 @@ function renderFieldModal() {
   }).join('');
   document.getElementById('fxWeather').innerHTML = opts('weather', WEATHER);
   document.getElementById('fxTerrain').innerHTML = opts('terrain', TERRAIN);
+  const names = battleTrainers(b);
+  document.getElementById('fxHazards').innerHTML = ['a', 'b'].map(s => {
+    const hz = (b.hazards || {})[s] || {};
+    const row = Object.entries(HAZARD).map(([k, d]) => {
+      const n = hz[k] || 0;
+      const next = n >= d.max ? 'tirar do campo' : (n ? `pôr a camada ${n + 1}` : 'pôr no campo');
+      return `<button class="fx-opt${n ? ' on' : ''}" style="--c:${d.color}" data-hz-pick="${s}:${k}" title="${esc(d.desc)} — clicar: ${next}">
+        <span class="fx-ic" aria-hidden="true">${d.icon}</span>
+        <span class="fx-ol"><b>${esc(d.label)}</b><small>${esc(d.en)}${d.max > 1 ? ` · até ${d.max} camadas` : ''}</small></span>
+        ${n ? `<span class="fx-on">${d.max > 1 ? '×' + n : 'ATIVO'}</span>` : ''}
+      </button>`;
+    }).join('');
+    const any = Object.values(hz).some(v => v > 0);
+    return `<div class="fx-hz">
+      <div class="fx-hz-who">No lado de <b>${esc(names[s].name)}</b>
+        ${any ? `<button class="fx-b fx-x" data-hz-clear="${s}" title="Limpar o lado (Rapid Spin, Defog)">✕</button>` : ''}</div>
+      <div class="fx-grid">${row}</div>
+    </div>`;
+  }).join('');
   const cur = [b.weather && WEATHER[b.weather.kind], b.terrain && TERRAIN[b.terrain.kind]].filter(Boolean);
   document.getElementById('fxDesc').innerHTML = cur.length
     ? cur.map(d => `<div><b>${d.icon} ${esc(d.label)}:</b> ${esc(d.desc)}</div>`).join('')
@@ -3921,6 +4036,12 @@ function onFieldModalClick(ev) {
   if (step) { fieldDuration = Math.max(1, Math.min(FIELD_TURNS_MAX, fieldDuration + parseInt(step.dataset.fxd, 10))); renderFieldModal(); return; }
   const pick = ev.target.closest('[data-fx-pick]');
   const b = openBattle();
+  const hzPick = ev.target.closest('[data-hz-pick]'), hzClear = ev.target.closest('[data-hz-clear]');
+  if (b && (hzPick || hzClear)) {
+    if (hzClear) hazardStep(hzClear.dataset.hzClear, null);
+    else hazardStep(...hzPick.dataset.hzPick.split(':'));
+    return;
+  }
   if (!pick || !b) return;
   const key = pick.dataset.fxPick, kind = pick.dataset.kind;
   const def = (key === 'weather' ? WEATHER : TERRAIN)[kind];
@@ -3983,6 +4104,8 @@ function renderArena(b) {
       <div class="wx-fx" aria-hidden="true"></div>
       <div class="plat plat-foe"></div>
       <div class="plat plat-ally"></div>
+      ${hazardZoneHtml(b, v.top.key, 'foe', v.top.trainer.name)}
+      ${hazardZoneHtml(b, v.bottom.key, 'ally', v.bottom.trainer.name)}
       ${top ? battleSpriteHtml(lookOf(v.top, top), false, 'spr spr-foe' + (topInfo.fainted ? ' fainted' : ''), topInfo.tera, topInfo.dmax) + hpBoxHtml(topInfo, 'foe') : '<div class="scene-empty">Sem Pokémon em campo</div>'}
       ${bottom ? battleSpriteHtml(lookOf(v.bottom, bottom), true, 'spr spr-ally' + (bottomInfo.fainted ? ' fainted' : ''), bottomInfo.tera, bottomInfo.dmax) + hpBoxHtml(bottomInfo, 'ally') : ''}
     </div>
@@ -4138,10 +4261,14 @@ const ART_BANNER_X = 200;
 function battleArtData(b) {
   const t = battleTrainers(b);
   const faintForms = isGM() ? (b.faintForm || {}) : ((b.mine && b.mine.faintForm) || {});
+  // who was on the field at the end (it gets the highlighted ball); an opponent's comes marked in `seen`
+  const activeId = s => (isGM() ? b.active[s] : (b.mine ? b.mine.active : null));
   const pick = (m, side) => {
     const ff = faintForms[m.id] || {}, bt = m.battle || {}, tr = transformOf(m);
+    const max = maxHpOf(m);
     return { species: m.species, shiny: !!m.shiny, megaActive: megaFormOf(m) || ff.mega || '', art: artRefOf(m),
       fainted: curHpOf(m) <= 0, tera: battleTera(b, side, m.id), dmax: bt.dmax || ff.dmax || null,
+      hpPct: max ? Math.round((curHpOf(m) / max) * 100) : 0, active: m.id === activeId(side),
       transformSprite: (tr && tr.spriteId) || ff.transformSprite || null };
   };
   const mon = id => battleMon(b, id);
@@ -4249,10 +4376,34 @@ async function drawBattleArt(out, data) {
     }
   };
 
+  // Around a used ball: the HP it finished with, as a ring that fills from the top clockwise and pulls
+  // back as the HP drops (green → yellow → red, like the bar), and a gold outline on the last one that
+  // was on the field.
+  const gauge = (cx, cy, pct, last) => {
+    const inner = ART_R + 1, track = ART_R + 3, out = last ? ART_R + 6 : ART_R + 4;
+    const fill = pct > 50 ? '#48d848' : (pct > 20 ? '#f0c828' : '#e03c2c');
+    const turn = (pct / 100) * Math.PI * 2;
+    for (let y = -out; y <= out; y++) for (let x = -out; x <= out; x++) {
+      const d = Math.hypot(x, y);
+      if (d < inner - 0.5 || d > out + 0.3) continue;
+      let c;
+      if (d <= track + 0.3) {
+        const a = (Math.atan2(x, -y) + Math.PI * 2) % (Math.PI * 2);   // 0 at the top, growing clockwise
+        c = pct > 0 && a <= turn ? fill : '#24382a';
+      } else c = last && d > ART_R + 4.3 ? '#ffd23c' : '#1c2e22';
+      put(cx + x, cy + y, c);
+    }
+  };
+
   const sides = [['a', ART_BANNER_X, false], ['b', ART_W - ART_BANNER_X, true]];
   sides.forEach(([s, bx, mirror]) => {
     banner(bx);
-    ART_SLOTS.forEach(([sx, sy], i) => ball(mirror ? ART_W - sx : sx, sy, !data[s].mons[i]));
+    ART_SLOTS.forEach(([sx, sy], i) => {
+      const m = data[s].mons[i], cx = mirror ? ART_W - sx : sx;
+      ball(cx, sy, !m);
+      // fichas from before the ring: a Pokémon still standing counts as full
+      if (m) gauge(cx, sy, m.fainted ? 0 : (m.hpPct === undefined || m.hpPct === null ? 100 : m.hpPct), !!m.active);
+    });
   });
   ctx.putImageData(px, 0, 0);
 

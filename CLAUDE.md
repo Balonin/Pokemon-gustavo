@@ -150,7 +150,8 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
 - **Visibilidade na batalha, como nos jogos**: o jogador recebe em `/api/state` **todas** as
   batalhas da sala, já filtradas. As que ele luta vêm de `playerBattleView` — o próprio time
   completo e, do adversário, só o que `publicSideView` deixa: o Pokémon em campo (espécie, nível,
-  tipos, HP em %, estágios, condição), o tamanho do time e os já utilizados. Golpes, Status,
+  tipos, HP em %, estágios, condição), o tamanho do time e os já utilizados (esses com o HP só em %
+  e quem está em campo, que a arte de fim de batalha usa). Golpes, Status,
   ability, notas, ids e HP exato do outro lado nunca saem do servidor. O cliente do Mestre grava
   `maxHp` junto do `hp` pra essa porcentagem
 - **Modo espectador**: as batalhas em que o jogador **não** luta vêm de `spectatorBattleView`
@@ -231,6 +232,19 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   pra jogador e espectador). Na arena: faixa acima da cena com −/+/✕ (`fieldBarHtml`), janelinha
   de escolha (`#fieldModal`, `renderFieldModal`) e o efeito na cena (classes `wx-*`/`tr-*`).
   A Neve (Snow) não tira HP, como no Scarlet/Violet; quem tira é o Granizo (Hail)
+- **Armadilhas (entry hazards)**: ficam num lado do campo e pegam quem entra ali, como nos jogos.
+  `battle.hazards[side] = { sr, spikes, tspikes, web, steelsurge }` — só o que está posto, cada um até
+  o seu número de camadas (`HAZARD_LAYERS` no servidor: Espinhos 3, Espinhos Tóxicos 2, o resto 1).
+  Só o Mestre muda, com `PATCH /api/battles/:id { hazard: { side, kind, layers } | { side, kind, delta }
+  | { side, kind, clear: true } | { side, clear: 'all' } }` (`applyHazard`, que escreve no log); é público,
+  vai no `battleHeader` pra jogador e espectador. Nomes, efeitos e cores ficam na tabela `HAZARD` do
+  cliente. Na janela do campo (⚙ "🌦 Clima / Terreno / Armadilhas") o Mestre põe uma camada por clique e,
+  no limite, o clique tira; o ✕ do lado varre tudo (Rapid Spin, Defog). Na arena aparecem como selos no
+  chão de cada lado (`hazardZoneHtml`, `.hz-zone`), e no painel do Mestre vem uma fila **"Ao entrar"** com
+  o dano já calculado (`residualRowHtml`): Stealth Rock e Espinhos de Aço = 1/8 do HP vezes a
+  fraqueza/resistência ao tipo (pega até quem voa), Espinhos = 1/8, 1/6 ou 1/4 só pra quem está no chão,
+  e lembretes de Espinhos Tóxicos (veneno) e Teia Elástica (SPE −1). É dano indireto (`reason` `sr`,
+  `spikes`, `steelsurge`), então **não quebra Illusion**
 - **Illusion (Zoroark, Zoroark de Hisui, Zorua)**: ability `Illusion` (ou "Ilusão"). Ao entrar em campo
   (criação da batalha ou troca) fica disfarçado do **último Pokémon do time que ainda não desmaiou** (se esse
   é ele mesmo, sem disfarce): `battle.illusion[side] = { mon, as }`, decidido no servidor
@@ -260,7 +274,11 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   pokébolas a partir da ponta de cima (perto do VS): anti-horário na esquerda, horário na direita
   (`ART_SLOTS`). Cada Pokémon aparece como terminou — ou como foi **nocauteado**: nocauteado fica cinza e
   translúcido (`fadeFainted`), e na forma em que estava: cristal de Tera, Dynamax com aura vermelha
-  (`addArtAura`), Gigantamax com o sprite G-Max + aura, Mega/Battle Bound, transformado. Como o Dynamax e a
+  (`addArtAura`), Gigantamax com o sprite G-Max + aura, Mega/Battle Bound, transformado.
+  Em volta de cada pokébola usada vai o **HP com que ele terminou** (`gauge`): um anel que começa no topo
+  e anda no sentido horário, encolhendo conforme a vida cai, verde → amarelo → vermelho como a barra
+  (nocauteado = anel vazio); e quem estava **em campo no fim** ganha uma **borda dourada** por fora
+  (`active` no `pick` e no `seen` público). Como o Dynamax e a
   transformação acabam quando ele sai de campo, o servidor guarda a forma no nocaute em `battle.faintForm`
   (esquecida se ele for revivido); vai pro jogador em `mine.faintForm` e já resolvida no `seen` público
   (`tera`, `dmax`, `transformSprite`). Na ficha, os Status ficam em duas colunas: HP | SPE, ATK | SPA, DEF | SPD
