@@ -147,6 +147,16 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
 - **Batalhas** (tabela `battles`): o Mestre cria (`POST /api/battles`) com dois lados — jogador,
   NPC ou ele mesmo — e o time de cada um (até 6), troca o Pokémon em campo e encerra/exclui.
   `revealed` guarda todo Pokémon que já esteve em campo
+- **START**: a batalha **nasce fechada** (`started: false`): ninguém em campo (`active` nulo dos dois
+  lados), `revealed` vazio e log vazio, então nem o adversário nem o espectador recebem nada dela.
+  Quem abre é o Mestre, no botão "▶ START" no meio da cena (`PATCH /api/battles/:id { start: true }`):
+  aí os dois primeiros do time entram em campo (é quando um Zoroark se disfarça e um Ditto se
+  transforma), o log ganha `start` + os dois `send` e a música começa — para todo mundo ao mesmo tempo,
+  pelo polling. Antes disso o servidor recusa trocas (`batalha_nao_iniciada`); Mega/Tera/Dynamax/
+  transformação já falham sozinhos, porque não há Pokémon em campo. No cliente, `battleStarted(b)` e
+  `renderArenaStart` (o jogador vê "Aguardando o Mestre iniciar…", sem botão); a lista de batalhas
+  mostra "Não iniciada". Batalhas salvas antes disso não têm o campo e contam como iniciadas
+  (`hasStarted` no servidor)
 - **Visibilidade na batalha, como nos jogos**: o jogador recebe em `/api/state` **todas** as
   batalhas da sala, já filtradas. As que ele luta vêm de `playerBattleView` — o próprio time
   completo e, do adversário, só o que `publicSideView` deixa: o Pokémon em campo (espécie, nível,

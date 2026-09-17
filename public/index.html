@@ -599,6 +599,20 @@ body.in-room { max-width: none; padding: 12px; }
 .spr-ph { display: flex; align-items: center; justify-content: center; font-family: var(--font-pixel); font-size: 3rem; color: #384030; }
 .scene-empty { position: absolute; right: 10%; top: 20%; font-family: var(--font-pixel); font-size: 0.62rem; color: #486040; }
 
+/* ----- Before START: the battle waits closed ----- */
+.bt-start { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 12px; text-align: center; background: linear-gradient(180deg, rgba(20,24,18,.62) 0%, rgba(20,24,18,.86) 100%); }
+.st-faces { display: flex; align-items: center; gap: 16px; }
+.st-face { display: flex; flex-direction: column; align-items: center; gap: 5px; max-width: 140px; cursor: pointer; font-family: var(--font-pixel); font-size: 0.5rem; color: #f0f0e0; text-shadow: 1px 1px 0 var(--outline); }
+.st-face span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-vs { font-size: 1.1rem; }
+.st-go { --fill: #1a4428; --edge: var(--gold); font-size: 1rem; padding: 14px 28px; animation: st-pulse 1.2s steps(2, end) infinite; }
+.st-go:hover { --fill: #2a6a3c; animation: none; }
+@keyframes st-pulse { 50% { --fill: #2a6a3c; color: var(--gold); } }
+.st-wait { font-family: var(--font-pixel); font-size: 0.72rem; color: var(--gold); text-shadow: 2px 2px 0 var(--outline); animation: st-blink 1.6s steps(1) infinite; }
+@keyframes st-blink { 50% { opacity: 0.45; } }
+.st-hint { max-width: 32ch; font-size: 0.78rem; line-height: 1.5; color: #d8e4d0; text-shadow: 1px 1px 0 var(--outline); }
+@media (prefers-reduced-motion: reduce) { .st-go, .st-wait { animation: none; } }
+
 /* ----- Weather and terrain ----- */
 .bt-field { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .fx-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 5px 4px 8px; border: 2px solid var(--outline); background: color-mix(in srgb, var(--c) 30%, var(--panel-deep)); box-shadow: inset 0 -3px 0 var(--c); font-family: var(--font-pixel); font-size: 0.5rem; color: #fff; text-shadow: 1px 1px 0 var(--outline); }
@@ -3204,12 +3218,18 @@ function battleMon(b, id) {
   const snap = b.status === 'ended' ? (isGM() ? b.final : b.mine && b.mine.final) : null;
   return m && snap && snap[id] ? { ...m, battle: snap[id] } : m;
 }
+// A battle waits closed until the GM presses START: no one is on the field, the music is quiet and
+// the players get nothing of it. Battles created before this existed come without the flag.
+const battleStarted = b => b.started !== false;
+
 function battleView(b) {
+  // before START nobody is on the field: the sidebar and the bench must not mark anyone as being there
+  const onField = (party, id) => (battleStarted(b) ? (party.find(m => m.id === id) || party[0] || null) : null);
   if (isGM()) {
     const side = s => {
       const party = b.party[s].map(id => battleMon(b, id)).filter(Boolean);
       return { key: s, full: true, trainer: trainerOf(b.sides[s].owner), party,
-        active: party.find(m => m.id === b.active[s]) || party[0] || null, used: new Set(b.revealed[s]) };
+        active: onField(party, b.active[s]), used: new Set(b.revealed[s]) };
     };
     return { control: true, bottom: side('a'), top: side('b') };
   }
@@ -3220,7 +3240,7 @@ function battleView(b) {
   const party = b.mine.party.map(id => battleMon(b, id)).filter(Boolean);
   return {
     control: false,
-    bottom: { key: b.you, full: true, trainer: b.trainers[b.you], party, active: party.find(m => m.id === b.mine.active) || party[0] || null, used: new Set() },
+    bottom: { key: b.you, full: true, trainer: b.trainers[b.you], party, active: onField(party, b.mine.active), used: new Set() },
     top: pub(foe, b.foe)
   };
 }
@@ -3684,7 +3704,7 @@ function battleThemeList(b) {
 // Called after every battle render: (re)starts or stops the music only when what should play changes.
 function syncBattleMusic() {
   const b = battleMode ? openBattle() : null;
-  const live = b && b.status === 'active';
+  const live = b && b.status === 'active' && battleStarted(b);
   const list = live ? battleThemeList(b) : [];
   const key = live ? b.id + '|' + list.map(x => x.kind + ':' + x.ref).join(',') : '';
   if (key === music.key) return;
@@ -4054,9 +4074,42 @@ function onFieldModalClick(ev) {
   patchBattleRoom({ [key]: { kind, turns } }).then(renderFieldModal);
 }
 
+// The battle before START: the two trainers facing each other and, for the GM, the button that opens
+// it. There is nothing else to show — no one is on the field yet, on the server as much as here.
+function renderArenaStart(root, b, names) {
+  const gm = isGM();
+  const mine = !gm && !b.spectator;
+  const face = (t, side) => `<div class="st-face" data-profile="${esc(side)}" role="button" tabindex="0" title="Ver a ficha de ${esc(t.name)}">
+    ${avatarHtml(t.avatar, t.name)}<span>${esc(t.name)}</span></div>`;
+  root.innerHTML = `
+    <div class="bt-arena-head">
+      <button class="mini-btn" data-bt="back">← Batalhas</button>
+      <div class="bt-title">${esc(names.a.name)} <span class="bt-vs">VS</span> ${esc(names.b.name)}</div>
+      <div class="bt-tools">${gm ? `<button class="mini-btn" data-bt="delete" data-id="${esc(b.id)}">Excluir</button>` : ''}</div>
+    </div>
+    <div class="bt-scene">
+      <div class="plat plat-foe"></div>
+      <div class="plat plat-ally"></div>
+      <div class="bt-start">
+        <div class="st-faces">${face(names.a, 'a')}<span class="bt-vs st-vs">VS</span>${face(names.b, 'b')}</div>
+        ${gm
+          ? `<button class="btn st-go" data-bt="start">▶ START</button>
+             <div class="st-hint">Ninguém vê nada da batalha até você começar.</div>`
+          : `<div class="st-wait">Aguardando o Mestre iniciar…</div>
+             <div class="st-hint">${mine
+               ? 'Seu time já está escolhido. Os Pokémon entram em campo quando a batalha começar.'
+               : 'Os Pokémon entram em campo quando a batalha começar.'}</div>`}
+      </div>
+    </div>
+    ${battleLogHtml(b)}`;
+}
+
 function renderArena(b) {
   const root = document.getElementById('battleArena');
-  const v = battleView(b), names = battleTrainers(b);
+  const names = battleTrainers(b);
+  // before START there is no field to draw: just the two trainers and the button
+  if (!battleStarted(b) && b.status !== 'ended') { renderArenaStart(root, b, names); return; }
+  const v = battleView(b);
   const ctl = v.control && b.status === 'active';   // an ended battle is a record: no HP/stage/switch controls
   const onField = side => (side.full ? side.active : side.activeView);
   const infoOf = (side, m) => {
@@ -4141,7 +4194,7 @@ function battleCardHtml(b) {
       <span class="bt-vs">VS</span>
       <span class="bl-who" data-profile-battle="${esc(b.id)}:b" title="Ver a ficha de ${esc(t.b.name)}"><span>${esc(t.b.name)}</span>${avatarHtml(t.b.avatar, t.b.name)}</span>
     </div>
-    <div class="bl-meta"><span class="bl-status${b.status === 'ended' ? ' ended' : ''}">${b.status === 'ended' ? esc(winnerText(b)) : 'Em andamento'}</span>${mine ? '<span class="bl-status you">VOCÊ LUTA</span>' : ''} ${meta}</div>
+    <div class="bl-meta"><span class="bl-status${b.status === 'ended' ? ' ended' : ''}">${b.status === 'ended' ? esc(winnerText(b)) : (battleStarted(b) ? 'Em andamento' : 'Não iniciada')}</span>${mine ? '<span class="bl-status you">VOCÊ LUTA</span>' : ''} ${meta}</div>
     <div class="bl-actions">
       ${b.spectator
         ? `<button class="btn secondary small" data-bt="open" data-id="${esc(b.id)}" title="Você vê só o que entra em campo, sem golpes nem HP em número">👁 Assistir</button>`
@@ -4201,8 +4254,7 @@ async function createBattle() {
     const b = await API.call('POST', '/battles', { sides: { a: f.a, b: f.b }, party: f.party });
     battleForm = null;
     openBattleId = b.id;
-    await refreshState();
-    for (const side of ['a', 'b']) await imposterCheck(side);   // a Ditto leading transforms into the other lead
+    await refreshState();   // it opens closed: nobody is on the field until the GM presses START
     schedulePoll();
   } catch (e) { alert(errMsg(e)); }
 }
@@ -4212,6 +4264,14 @@ async function patchBattleRoom(patch) {
   try { await API.call('PATCH', '/battles/' + encodeURIComponent(b.id), patch); }
   catch (e) { alert(errMsg(e)); }
   await refreshState();
+}
+// START: the GM opens the battle. The server sends the lead of each side onto the field, and from
+// there on the players see the field and the music starts — on every device at once.
+async function startBattleRoom() {
+  const b = openBattle();
+  if (!b || !isGM() || battleStarted(b)) return;
+  await patchBattleRoom({ start: true });
+  for (const side of ['a', 'b']) await imposterCheck(side);   // a Ditto leading transforms into the other lead
 }
 // Like the games: the chosen Pokémon goes to the field and counts as used from then on.
 function switchIn(side, monId) {
@@ -4669,6 +4729,7 @@ function onBattleClick(ev) {
     else if (act === 'new') { battleForm = { a: '', b: '', party: { a: [], b: [] } }; renderBattle(); }
     else if (act === 'cancel-new') { battleForm = null; renderBattle(); }
     else if (act === 'create') createBattle();
+    else if (act === 'start') startBattleRoom();
     else if (act === 'restore') restoreBattleTeams();
     else if (act === 'end') { endingBattle = true; renderBattle(); }
     else if (act === 'end-cancel') { endingBattle = false; renderBattle(); }
@@ -4760,7 +4821,10 @@ function updateBattleNotice() {
   live.forEach(b => seenBattleIds.add(b.id));
   if (fresh && !(battleMode && openBattleId === fresh.id)) {
     const t = fresh.trainers[fresh.you === 'a' ? 'b' : 'a'];
-    document.getElementById('battleToastText').textContent = `⚔ O Mestre começou uma batalha: você contra ${t.name}!`;
+    // a battle waiting for START is a call to come and wait, not the battle itself
+    document.getElementById('battleToastText').textContent = battleStarted(fresh)
+      ? `⚔ O Mestre começou uma batalha: você contra ${t.name}!`
+      : `⚔ O Mestre preparou uma batalha: você contra ${t.name}!`;
     const toast = document.getElementById('battleToast');
     toast.dataset.id = fresh.id;
     toast.hidden = false;
@@ -5060,6 +5124,8 @@ const ERR_PT = {
   dmax_invalido: 'Só o Pokémon em campo pode usar Dynamax, e só com a batalha em andamento.',
   campo_invalido: 'Não deu pra mudar o clima/terreno (só com a batalha em andamento).',
   ilusao_invalida: 'Esse Pokémon não está disfarçado agora.',
+  batalha_nao_iniciada: 'A batalha ainda não começou: aperte START primeiro.',
+  batalha_encerrada: 'Essa batalha já foi encerrada.',
   transform_invalido: 'Não deu pra transformar: precisa de um Pokémon em campo do outro lado, com a batalha em andamento.'
 };
 const errMsg = e => ERR_PT[e.message] || ('Erro: ' + e.message);

@@ -796,8 +796,13 @@ function publicSideView(b, s, byId) {
     })
   };
 }
+// A battle is created closed: nobody is on the field and none of it reaches the players until the GM
+// presses START (PATCH { start: true }). Battles saved before this existed have no flag and count as
+// started, so they keep working.
+const hasStarted = b => b.started !== false;
+
 function battleHeader(b, info) {
-  return { id: b.id, name: b.name, status: b.status, winner: b.winner || null, createdAt: b.createdAt, endedAt: b.endedAt,
+  return { id: b.id, name: b.name, status: b.status, started: hasStarted(b), winner: b.winner || null, createdAt: b.createdAt, endedAt: b.endedAt,
     weather: b.weather || null, terrain: b.terrain || null, hazards: b.hazards || { a: {}, b: {} },
     trainers: { a: info[b.sides.a.owner] || { name: '—', avatar: '' }, b: info[b.sides.b.owner] || { name: '—', avatar: '' } } };
 }
@@ -1385,19 +1390,15 @@ app.post('/api/battles', auth, async (req, res) => {
       party[s] = ids;
     }
     if (sides.a.owner === sides.b.owner) return res.status(400).json({ error: 'lado_invalido' });
+    // Nobody is on the field yet and the log is empty: the battle only opens when the GM presses START.
     const data = {
-      name: String(body.name || '').trim().slice(0, 60), status: 'active', sides, party,
-      active: { a: party.a[0], b: party.b[0] },
-      revealed: { a: [party.a[0]], b: [party.b[0]] },   // everything that has been on the field, in order
+      name: String(body.name || '').trim().slice(0, 60), status: 'active', started: false, sides, party,
+      active: { a: null, b: null },
+      revealed: { a: [], b: [] },   // everything that has been on the field, in order
       winner: null, tera: { a: null, b: null }, dmax: { a: null, b: null }, mega: { a: null, b: null },
       weather: null, terrain: null, hazards: { a: {}, b: {} }, illusion: { a: null, b: null }, illusionSeen: {},
       createdAt: new Date().toISOString(), log: []
     };
-    pushLog(data, { k: 'start' });
-    SIDES.forEach(s => {
-      applyIllusionOnEntry(data, s, party[s][0], mons);   // a Zoroark leading comes in disguised
-      pushLog(data, { k: 'send', side: s, mon: party[s][0] });
-    });
     const id = uid();
     await store.upsertBattle(id, m.roomId, data);
     res.json({ id, ...data });
@@ -1412,7 +1413,25 @@ app.patch('/api/battles/:id', auth, async (req, res) => {
     if (!b) return;
     const { id, roomId, ...data } = b;
     const body = req.body || {};
+    // START: the GM opens the battle. The lead of each side comes onto the field now (that is when a
+    // Zoroark puts on its disguise) and only from here does any of it reach the other side.
+    if (body.start) {
+      if (data.status === 'ended') return res.status(400).json({ error: 'batalha_encerrada' });
+      if (!hasStarted(data)) {
+        data.started = true;
+        const mons = await store.listPokemon(roomId);
+        pushLog(data, { k: 'start' });
+        for (const s of SIDES) {
+          const lead = data.party[s][0];
+          data.active[s] = lead;
+          if (!data.revealed[s].includes(lead)) data.revealed[s].push(lead);
+          applyIllusionOnEntry(data, s, lead, mons);   // a Zoroark leading comes in disguised
+          pushLog(data, { k: 'send', side: s, mon: lead });
+        }
+      }
+    }
     if (body.switch) {
+      if (!hasStarted(data)) return res.status(400).json({ error: 'batalha_nao_iniciada' });
       const side = body.switch.side, monId = String(body.switch.monId || '');
       if (!SIDES.includes(side) || !data.party[side].includes(monId)) return res.status(400).json({ error: 'troca_invalida' });
       const prev = data.active[side];
