@@ -293,11 +293,13 @@ silenciosamente na hora de salvar e o dado some.
 
 Dentro de `public/index.html`:
 
-- `POKEDEX` — 1025 espécies + 116 formas alternativas (regionais de Alola/Galar/Hisui/Paldea,
-  Rotom, Deoxys, Therian etc.), com Status base, tipos, estágio evolutivo e flags de lendário.
+- `POKEDEX` — 1025 espécies + 141 formas alternativas (regionais de Alola/Galar/Hisui/Paldea,
+  Rotom, Deoxys, Therian, formas de gênero, Lycanroc, Basculin/Basculegion etc.), com Status base,
+  tipos, estágio evolutivo e flags de lendário.
   Formas têm `id` do PokeAPI (10xxx, serve pro sprite), `species` (nº da Pokédex) e
   `battleOnly` quando só existem em batalha. **Mega, Primitivo e Gigantamax ficam de fora de
-  propósito** (têm outras regras no sistema). `base100` é sempre o Status da forma inicial da
+  propósito** (têm outras regras no sistema); formas só cosméticas (Totem, bonés do Pikachu, cores
+  do Minior, montarias do Koraidon/Miraidon) também. `base100` é sempre o Status da forma inicial da
   linha evolutiva *daquela forma* (Arcanine de Hisui → Growlithe de Hisui). Nomes são os oficiais
   em inglês; `aka` guarda o nome antigo pra fichas salvas antes continuarem resolvendo
 - `MOVES` — 937 golpes com tipo, categoria, poder, dado convertido, accuracy, prioridade
