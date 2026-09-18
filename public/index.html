@@ -47,7 +47,7 @@ h3 { font-family: var(--font-pixel); font-size: 0.708rem; margin: 0 0 8px; color
 /* ====== PokeRogue pixel frame ====== */
 .card, .panel, .tab-btn, .btn, .mon-tile, .team-mon-chip, .mon-item, .sheet, .role-badge,
 .art-frame, .shiny-btn, .stat-box, .points-banner, .hp-bar, .nature-box,
-.ability-box, .matchup-box, .tera-picker, .move-card, .move-card-add, .ws-rail, .tr-tile, .bn-tile, .bt-panel, .bl-card, .toast, .bt-log, .bt-music, .ts-notes-box {
+.ability-box, .matchup-box, .tera-picker, .move-card, .move-card-add, .ws-rail, .tr-tile, .bn-tile, .bt-panel, .bl-card, .toast, .bt-log, .bt-music, .ts-notes-box, .rp-cap {
   clip-path: polygon(
     calc(var(--u)*2) 0, calc(100% - var(--u)*2) 0,
     calc(100% - var(--u)*2) var(--u), calc(100% - var(--u)) var(--u),
@@ -729,6 +729,61 @@ body.in-room { max-width: none; padding: 12px; }
 .hb-stages .down { color: #c02818; }
 .hb-num { font-size: 0.6rem; flex-shrink: 0; }
 
+/* ----- Replay: the log played back step by step, like a Gartic Phone album ----- */
+.modal.replay-modal { max-width: min(900px, calc(100vw - 32px)); }
+.rp-head { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 12px 0 10px; font-family: var(--font-pixel); font-size: 0.6rem; }
+.rp-who { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.rp-who span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 14ch; }
+.rp-who.win { color: var(--gold); }
+.rp-scene { overflow: hidden; }
+/* the sprite lives inside a slot, so an animation on the slot survives the sprite being redrawn */
+.rp-slot { position: absolute; aspect-ratio: 1; z-index: 1; }
+.rp-slot .spr { position: absolute; inset: 0; width: 100%; height: 100%; }
+.rp-foe { right: 12%; top: 1%; width: 24%; }
+.rp-ally { left: 8%; bottom: -4%; width: 34%; }
+.rp-slot.down { transform: translateY(70%); opacity: 0.35; }   /* knocked out, still on the field */
+@keyframes rp-in-foe { from { transform: translate(150%, -40%); opacity: 0; } 60% { opacity: 1; } to { transform: none; opacity: 1; } }
+@keyframes rp-in-ally { from { transform: translate(-150%, 40%); opacity: 0; } 60% { opacity: 1; } to { transform: none; opacity: 1; } }
+.rp-foe.fx-enter { animation: rp-in-foe .5s steps(8, end) both; }
+.rp-ally.fx-enter { animation: rp-in-ally .5s steps(8, end) both; }
+@keyframes rp-atk-ally { 45% { transform: translate(54%, -48%); } }
+@keyframes rp-atk-foe { 45% { transform: translate(-62%, 54%); } }
+.rp-ally.fx-atk { animation: rp-atk-ally .45s steps(6, end) both; }
+.rp-foe.fx-atk { animation: rp-atk-foe .45s steps(6, end) both; }
+@keyframes rp-shake { 20% { transform: translateX(-7%); } 40% { transform: translateX(7%); } 60% { transform: translateX(-5%); } 80% { transform: translateX(5%); } }
+@keyframes rp-blink { 50% { opacity: 0.12; } }
+.rp-slot.fx-hurt { animation: rp-shake .42s steps(4, end) both; }
+.rp-slot.fx-hurt .spr { animation: rp-blink .42s steps(1, end) 3 both; }
+@keyframes rp-faint { to { transform: translateY(70%); opacity: 0.35; } }
+.rp-slot.fx-faint { animation: rp-faint .8s ease-in both; }
+@keyframes rp-burst { 30% { transform: scale(1.16); filter: brightness(2.6) saturate(1.6); } }
+.rp-slot.fx-burst { animation: rp-burst .7s steps(6, end) both; }
+@keyframes rp-glow { 40% { filter: brightness(1.5) saturate(1.4) drop-shadow(0 0 6px #7ee07e); } }
+.rp-slot.fx-heal { animation: rp-glow .6s steps(4, end) both; }
+.rp-spark { position: absolute; inset: 16%; z-index: 4; pointer-events: none; border-radius: 50%; background: radial-gradient(circle, #fff 0 30%, #ffd76a 30% 56%, #f86038 56% 68%, transparent 70%); animation: rp-spark .38s steps(4, end) both; }
+@keyframes rp-spark { from { transform: scale(0.25); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+.rp-float { position: absolute; left: 50%; top: 28%; z-index: 5; pointer-events: none; font-family: var(--font-pixel); font-size: 0.78rem; color: #ff7060; text-shadow: 2px 2px 0 var(--outline); animation: rp-float 1s steps(10, end) both; }
+.rp-float.up { color: #8ce88c; }
+@keyframes rp-float { from { opacity: 0; transform: translate(-50%, 20px); } 20% { opacity: 1; } to { opacity: 0; transform: translate(-50%, -36px); } }
+.rp-banner {
+  position: absolute; left: 50%; top: 44%; z-index: 6; max-width: 84%; padding: 11px 16px; text-align: center;
+  background: rgba(10, 12, 8, 0.84); border: 3px solid var(--gold); color: #fff;
+  font-family: var(--font-pixel); font-size: 0.78rem; line-height: 1.5; text-shadow: 2px 2px 0 var(--outline);
+  animation: rp-pop .45s steps(5, end) both;
+}
+@keyframes rp-pop { from { opacity: 0; transform: translate(-50%, -50%) scale(0.5); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+.rp-banner { transform: translate(-50%, -50%); }
+.rp-cap { --fill: var(--panel-deep); --edge: #5a6a7a; --u: 2px; margin-top: 10px; padding: 11px 13px; min-height: 62px; font-size: 0.8rem; line-height: 1.5; }
+.rp-cap .log-line { border: 0; padding: 0; }
+.rp-bar { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.rp-prog { flex: 1; height: 12px; background: var(--panel-deep); border: 2px solid var(--outline); cursor: pointer; }
+.rp-prog i { display: block; height: 100%; background: var(--gold); transition: width .15s linear; }
+.rp-count { font-family: var(--font-pixel); font-size: 0.52rem; color: var(--ink-soft); flex-shrink: 0; }
+.rp-ctl { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.rp-ctl .mini-btn.on { background: var(--red); color: #fff; }
+@media (max-width: 760px) { .rp-foe { width: 34%; top: 4%; } .rp-ally { width: 46%; } }
+@media (prefers-reduced-motion: reduce) { .rp-slot, .rp-slot .spr, .rp-spark, .rp-float, .rp-banner { animation: none !important; } }
+
 .bt-panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .bt-panel { --fill: var(--panel); --edge: #5a6a7a; padding: 14px 15px; display: flex; flex-direction: column; gap: 9px; min-width: 0; container-type: inline-size; }
 .bt-panel.empty { color: var(--ink-soft); font-size: 0.8rem; justify-content: center; text-align: center; min-height: 120px; }
@@ -1162,6 +1217,38 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
       <button class="btn secondary small" id="artClose">Fechar</button>
       <button class="btn secondary small" id="artDownload">⬇ Baixar</button>
       <button class="btn small" id="artCopy">📋 Copiar imagem</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== BATTLE REPLAY: the log played back, blow by blow ===== -->
+<div class="modal-backdrop" id="replayModal" hidden>
+  <div class="card modal replay-modal" role="dialog" aria-modal="true" aria-labelledby="rpTitle">
+    <h2 id="rpTitle">Replay da batalha</h2>
+    <div class="rp-head" id="rpHead"></div>
+    <div class="bt-scene rp-scene" id="rpScene">
+      <div class="wx-fx" aria-hidden="true"></div>
+      <div class="plat plat-foe"></div>
+      <div class="plat plat-ally"></div>
+      <div id="rpHazFoe"></div>
+      <div id="rpHazAlly"></div>
+      <div class="rp-slot rp-foe" id="rpFoe"></div>
+      <div class="rp-slot rp-ally" id="rpAlly"></div>
+      <div id="rpBoxFoe"></div>
+      <div id="rpBoxAlly"></div>
+      <div id="rpBanner"></div>
+    </div>
+    <div class="rp-cap" id="rpCap"></div>
+    <div class="rp-bar">
+      <div class="rp-prog" id="rpProg" role="slider" aria-label="Momento da batalha" tabindex="0"><i></i></div>
+      <span class="rp-count" id="rpCount"></span>
+    </div>
+    <div class="rp-ctl">
+      <button class="mini-btn" id="rpPrev" title="Passo anterior">⏮</button>
+      <button class="mini-btn" id="rpPlay" title="Tocar / pausar (espaço)">⏸</button>
+      <button class="mini-btn" id="rpNext" title="Próximo passo">⏭</button>
+      <button class="mini-btn" id="rpSpeed" title="Velocidade">1×</button>
+      <button class="btn secondary small" id="rpClose">Fechar</button>
     </div>
   </div>
 </div>
@@ -4142,6 +4229,7 @@ function renderArena(b) {
   } else {
     if (v.spectator) tools += '<span class="bl-status spect" title="Você não luta nesta batalha: vê só o que entra em campo">👁 ESPECTADOR</span>';
     if (b.status === 'ended') tools += `<button class="mini-btn art-btn" data-bt="art">🏆 Arte da batalha</button>`;
+    if ((b.log || []).length) tools += `<button class="mini-btn" data-bt="replay" data-id="${esc(b.id)}" title="Ver a batalha de novo, lance a lance">🎬 Replay</button>`;
     if (v.control) tools += `
       ${b.status === 'ended' ? '' : '<button class="mini-btn" data-bt="restore">Restaurar times</button>'}
       <button class="mini-btn" data-bt="${b.status === 'ended' ? 'reopen' : 'end'}">${b.status === 'ended' ? 'Reabrir' : 'Encerrar'}</button>
@@ -4199,6 +4287,7 @@ function battleCardHtml(b) {
       ${b.spectator
         ? `<button class="btn secondary small" data-bt="open" data-id="${esc(b.id)}" title="Você vê só o que entra em campo, sem golpes nem HP em número">👁 Assistir</button>`
         : `<button class="btn small" data-bt="open" data-id="${esc(b.id)}">${mine && b.status !== 'ended' ? 'Entrar' : 'Abrir'}</button>`}
+      ${(b.log || []).length ? `<button class="btn secondary small" data-bt="replay" data-id="${esc(b.id)}" title="Ver a batalha de novo, lance a lance, na ordem em que aconteceu">🎬 Replay</button>` : ''}
       ${isGM() ? `<button class="btn danger small" data-bt="delete" data-id="${esc(b.id)}">Excluir</button>` : ''}
     </div>
   </div>`;
@@ -4717,6 +4806,336 @@ function copyBattleArt() {
   }, 'image/png');
 }
 
+// ===== Replay: the battle log played back, blow by blow =====
+// Each log entry becomes a frame with the whole field as it stood right after it, so the replay can
+// run by itself, be paused, stepped or dragged. It reads the same log the viewer already has — a
+// player replays only what they were allowed to see (the opponent's HP in %, and nothing of a
+// Pokémon that never entered the field).
+const REPLAY_MS = { start: 1600, send: 1050, hit: 1150, chip: 900, heal: 900, faint: 1500, burst: 1300, stage: 900, flash: 850, field: 1150, end: 3200, plain: 800 };
+const REPLAY_SPEEDS = [0.5, 1, 1.5, 2, 4];
+const replay = { b: null, frames: [], i: 0, playing: false, speed: 1, timer: null, fxTimers: [], sides: { ally: 'a', foe: 'b' }, look: { foe: '', ally: '' } };
+
+// Everyone who may show up in the log, by side: the GM knows them by ficha id, a player only by the
+// name the log gives them (their own team, and the opponents that have been on the field).
+function replayCast(b) {
+  const cast = new Map();
+  const put = (side, key, info) => { if (key && !cast.has(side + '|' + key)) cast.set(side + '|' + key, info); };
+  const fromMon = m => ({ name: m.nickname || m.species, species: m.species, level: m.level, shiny: !!m.shiny });
+  const fromSeen = v => ({ name: v.nickname || v.species, species: v.species, level: v.level, shiny: !!v.shiny });
+  if (isGM()) ['a', 'b'].forEach(s => b.party[s].forEach(id => { const m = battleMon(b, id); if (m) put(s, id, fromMon(m)); }));
+  else if (b.spectator) ['a', 'b'].forEach(s => b.field[s].seen.forEach(v => put(s, v.nickname || v.species, fromSeen(v))));
+  else {
+    const foe = b.you === 'a' ? 'b' : 'a';
+    b.mine.party.map(id => battleMon(b, id)).filter(Boolean).forEach(m => put(b.you, m.nickname || m.species, fromMon(m)));
+    b.foe.seen.forEach(v => put(foe, v.nickname || v.species, fromSeen(v)));
+  }
+  return cast;
+}
+
+function replayFrames(b) {
+  const gm = isGM();
+  const cast = replayCast(b);
+  const clone = x => JSON.parse(JSON.stringify(x));
+  const other = s => (s === 'a' ? 'b' : 'a');
+  const keyOf = (side, id, name) => { const k = gm ? id : name; return side && k ? side + '|' + k : null; };
+  const nameOfId = id => { const m = monById(id); return m ? (m.nickname || m.species) : '?'; };
+  const dexOf = sp => (DEX_BY_NAME[(sp || '').toLowerCase()] || {}).id || null;
+  let st = { mons: {}, field: { a: null, b: null }, weather: null, terrain: null, hazards: { a: {}, b: {} }, over: null };
+  const frames = [];
+  for (const e of (b.log || [])) {
+    st = clone(st);
+    const side = e.side || null;
+    const key = keyOf(side, e.mon, e.name);
+    const ensure = k => {
+      if (!k) return null;
+      if (!st.mons[k]) {
+        const base = cast.get(k) || { name: k.slice(2) || '?', species: '', level: '', shiny: false };
+        st.mons[k] = { ...base, side: k.slice(0, 1), pct: 100, stages: {}, fainted: false, status: null,
+          confused: false, tera: null, dmax: null, mega: '', transform: null, transformSprite: null, illusion: null };
+      }
+      return st.mons[k];
+    };
+    const onField = s => (st.field[s] ? st.mons[st.field[s]] : null);
+    const ours = s => Object.values(st.mons).filter(m => m.side === s);
+    const r = ensure(key);
+    let fx = null;
+    switch (e.k) {
+      case 'start': fx = { kind: 'start' }; break;
+      case 'send': {
+        // leaving the field undoes a transformation, as in the games (the server does the same, quietly)
+        const leaving = onField(side);
+        if (leaving) { leaving.transform = null; leaving.transformSprite = null; }
+        if (r) { r.illusion = gm ? (e.as ? nameOfId(e.as) : null) : (e.asName || null); st.field[side] = key; }
+        fx = { kind: 'send', side };
+        break;
+      }
+      case 'hp': {
+        if (!r) break;
+        let amount;
+        if (e.delta !== undefined) {
+          r.cur = e.hp; r.max = e.max;
+          r.pct = e.max ? Math.max(0, Math.min(100, (e.hp / e.max) * 100)) : r.pct;
+          amount = (e.delta > 0 ? '+' : '−') + Math.abs(e.delta);
+        } else {
+          const d = e.pct || 0;
+          r.pct = Math.max(0, Math.min(100, r.pct + d));
+          amount = (d > 0 ? '+' : '−') + Math.abs(d) + '%';
+        }
+        const down = (e.delta !== undefined ? e.delta : (e.pct || 0)) < 0;
+        // a move's hit (lost HP with no end-of-turn reason) is the one that gets the lunge
+        const hitting = down && !e.why && st.field[side] === key && !!onField(other(side));
+        fx = { kind: down ? (hitting ? 'hit' : 'chip') : 'heal', side, amount, attacker: hitting ? other(side) : null };
+        break;
+      }
+      case 'faint': {
+        if (r) { r.fainted = true; r.pct = 0; if (r.max !== undefined) r.cur = 0; }
+        fx = { kind: 'faint', side };
+        break;
+      }
+      case 'stage': {
+        if (r) { if (e.now) r.stages[e.stat] = e.now; else delete r.stages[e.stat]; }
+        fx = { kind: 'stage', side, amount: `${STAT_LABEL[e.stat] || ''} ${e.delta > 0 ? '▲' : '▼'}`, up: e.delta > 0 };
+        break;
+      }
+      case 'status': { if (r) r.status = e.status || null; fx = { kind: 'flash', side }; break; }
+      case 'confuse': { if (r) r.confused = !!e.on; fx = { kind: 'flash', side }; break; }
+      case 'restore': {
+        if (r) { r.pct = 100; if (r.max !== undefined) r.cur = r.max; r.stages = {}; r.status = null; r.confused = false; r.fainted = false; }
+        fx = { kind: 'heal', side };
+        break;
+      }
+      case 'tera': { if (r) r.tera = e.type || null; fx = { kind: 'burst', side }; break; }
+      case 'tera-undo': { ours(side).forEach(m => { m.tera = null; }); break; }
+      case 'dmax': { if (r) r.dmax = e.gmax ? 'gmax' : 'dmax'; fx = { kind: 'burst', side }; break; }
+      case 'dmax-end': case 'dmax-undo': { ours(side).forEach(m => { m.dmax = null; }); fx = { kind: 'flash', side }; break; }
+      case 'mega': { if (r) r.mega = e.form || 'Mega'; fx = { kind: 'burst', side }; break; }
+      case 'mega-undo': { ours(side).forEach(m => { m.mega = ''; }); break; }
+      case 'transform': {
+        if (r) {
+          const tName = gm ? nameOfId(e.target) : (e.targetName || '');
+          const tSide = gm ? (e.targetSide || other(side)) : other(side);
+          const src = cast.get(tSide + '|' + (gm ? e.target : tName));
+          r.transform = tName || null;
+          r.transformSprite = src ? dexOf(src.species) : null;
+        }
+        fx = { kind: 'burst', side };
+        break;
+      }
+      case 'transform-end': { if (r) { r.transform = null; r.transformSprite = null; } fx = { kind: 'flash', side }; break; }
+      case 'illusion-end': {
+        // the disguise dropped: for whoever was fooled, who is on the field becomes the real Pokémon,
+        // keeping the HP and conditions that were always really theirs
+        const oldKey = gm ? key : keyOf(side, e.mon, e.wasName);
+        const shown = oldKey && st.mons[oldKey];
+        if (r && shown && oldKey !== key) {
+          Object.assign(r, { pct: shown.pct, cur: shown.cur, max: shown.max, stages: shown.stages, status: shown.status,
+            confused: shown.confused, tera: shown.tera, dmax: shown.dmax, mega: shown.mega, fainted: shown.fainted });
+          delete st.mons[oldKey];
+        }
+        if (r) r.illusion = null;
+        if (!st.field[side] || st.field[side] === oldKey) st.field[side] = key;
+        fx = { kind: 'burst', side };
+        break;
+      }
+      case 'weather': { st.weather = e.kind || null; fx = { kind: 'field' }; break; }
+      case 'weather-end': { st.weather = null; fx = { kind: 'field' }; break; }
+      case 'terrain': { st.terrain = e.kind || null; fx = { kind: 'field' }; break; }
+      case 'terrain-end': { st.terrain = null; fx = { kind: 'field' }; break; }
+      case 'hazard': { if (side) st.hazards[side][e.kind] = e.layers || 1; fx = { kind: 'field' }; break; }
+      case 'hazard-end': { if (side) delete st.hazards[side][e.kind]; fx = { kind: 'field' }; break; }
+      case 'hazard-clear': { if (side) st.hazards[side] = {}; fx = { kind: 'field' }; break; }
+      case 'end': { st.over = e.winner || 'none'; fx = { kind: 'end' }; break; }
+      case 'reopen': { st.over = null; break; }
+    }
+    const text = logText(b, e);
+    if (text) frames.push({ e, fx: fx || { kind: 'plain', side }, text, state: clone(st) });
+  }
+  return frames;
+}
+
+// The Pokémon as the sprite maker wants it, so the replay gets the Mega, the Gigantamax, the Tera
+// crystal and a transformation for free.
+function replayLook(r) {
+  const bt = {};
+  if (r.mega) bt.mega = { form: r.mega };
+  if (r.dmax) bt.dmax = r.dmax;
+  return { species: r.species, nickname: r.name, shiny: r.shiny, transformSprite: r.transformSprite || undefined, battle: bt };
+}
+
+function replayDraw(i, animate) {
+  const b = replay.b, f = replay.frames[i];
+  if (!f) return;
+  const st = f.state, t = battleTrainers(b), sides = replay.sides;
+  const scene = document.getElementById('rpScene');
+  scene.className = 'bt-scene rp-scene'
+    + (st.weather && WEATHER[st.weather] ? ' wx-' + st.weather : '')
+    + (st.terrain && TERRAIN[st.terrain] ? ' tr-' + st.terrain : '');
+  const field = { hazards: st.hazards };
+  document.getElementById('rpHazFoe').innerHTML = hazardZoneHtml(field, sides.foe, 'foe', t[sides.foe].name);
+  document.getElementById('rpHazAlly').innerHTML = hazardZoneHtml(field, sides.ally, 'ally', t[sides.ally].name);
+  ['foe', 'ally'].forEach(pos => {
+    const slot = document.getElementById(pos === 'foe' ? 'rpFoe' : 'rpAlly');
+    const box = document.getElementById(pos === 'foe' ? 'rpBoxFoe' : 'rpBoxAlly');
+    const side = sides[pos];
+    const r = st.field[side] ? st.mons[st.field[side]] : null;
+    slot.className = 'rp-slot rp-' + pos + (r && r.fainted ? ' down' : '');
+    if (!r) { slot.innerHTML = ''; box.innerHTML = ''; replay.look[pos] = ''; return; }
+    // the sprite is only redrawn when the look really changed, so an animation isn't cut short
+    const look = [r.name, r.species, r.shiny, r.mega, r.dmax, r.tera, r.transformSprite, r.fainted].join('|');
+    if (look !== replay.look[pos]) {
+      replay.look[pos] = look;
+      slot.innerHTML = battleSpriteHtml(replayLook(r), pos === 'ally', 'spr' + (r.fainted ? ' fainted' : ''), r.tera, r.dmax);
+    }
+    box.innerHTML = hpBoxHtml({ name: r.name, level: r.level, shiny: r.shiny, pct: r.pct, cur: r.cur, max: r.max,
+      stages: r.stages, fainted: r.fainted, status: r.status, confused: r.confused, tera: r.tera, dmax: r.dmax,
+      mega: r.mega, transform: r.transform, illusion: r.illusion }, pos);
+  });
+  document.getElementById('rpCap').innerHTML = `<div class="log-line">${f.text}</div>`;
+  document.querySelector('#rpProg i').style.width = ((i + 1) / replay.frames.length) * 100 + '%';
+  document.getElementById('rpProg').setAttribute('aria-valuenow', String(i + 1));
+  document.getElementById('rpCount').textContent = `${i + 1}/${replay.frames.length}`;
+  replayFx(f, animate);
+}
+
+// The blow itself: the attacker lunges, whoever took it shakes and blinks, the damage floats up and
+// the big moments (start, Mega, Tera, a knockout, the end) get a banner over the field.
+function replayFx(f, animate) {
+  replay.fxTimers.forEach(clearTimeout);
+  replay.fxTimers = [];
+  const scene = document.getElementById('rpScene');
+  scene.querySelectorAll('.rp-spark, .rp-float').forEach(el => el.remove());
+  const banner = document.getElementById('rpBanner');
+  banner.innerHTML = '';
+  const fx = f.fx || {};
+  if (['start', 'end', 'burst', 'faint', 'field'].includes(fx.kind)) banner.innerHTML = `<div class="rp-banner">${f.text}</div>`;
+  if (!animate) return;
+  const later = (fn, ms) => replay.fxTimers.push(setTimeout(fn, ms / replay.speed));
+  const slotOf = side => document.getElementById(replay.sides.foe === side ? 'rpFoe' : 'rpAlly');
+  const play = (el, cls, secs) => {
+    if (!el) return;
+    el.classList.remove(cls);
+    void el.offsetWidth;                       // restart the animation even when it is the same class
+    el.style.animationDuration = (secs / replay.speed) + 's';
+    const spr = el.querySelector('.spr');
+    if (spr) spr.style.animationDuration = (secs / replay.speed) + 's';
+    el.classList.add(cls);
+  };
+  const float = (side, text, up) => {
+    const slot = slotOf(side);
+    if (!slot || !text) return;
+    const el = document.createElement('span');
+    el.className = 'rp-float' + (up ? ' up' : '');
+    el.textContent = text;
+    el.style.animationDuration = (1 / replay.speed) + 's';
+    slot.appendChild(el);
+    later(() => el.remove(), 1100);
+  };
+  const spark = side => {
+    const slot = slotOf(side);
+    if (!slot) return;
+    const el = document.createElement('span');
+    el.className = 'rp-spark';
+    el.style.animationDuration = (0.38 / replay.speed) + 's';
+    slot.appendChild(el);
+    later(() => el.remove(), 500);
+  };
+  switch (fx.kind) {
+    case 'send': play(slotOf(fx.side), 'fx-enter', 0.5); break;
+    case 'hit':
+      play(slotOf(fx.attacker), 'fx-atk', 0.45);
+      later(() => { play(slotOf(fx.side), 'fx-hurt', 0.42); spark(fx.side); float(fx.side, fx.amount, false); }, 230);
+      break;
+    case 'chip': play(slotOf(fx.side), 'fx-hurt', 0.42); float(fx.side, fx.amount, false); break;
+    case 'heal': play(slotOf(fx.side), 'fx-heal', 0.6); float(fx.side, fx.amount, true); break;
+    case 'faint': play(slotOf(fx.side), 'fx-faint', 0.8); break;
+    case 'burst': play(slotOf(fx.side), 'fx-burst', 0.7); break;
+    case 'stage': play(slotOf(fx.side), 'fx-heal', 0.6); float(fx.side, fx.amount, fx.up); break;
+    case 'flash': play(slotOf(fx.side), 'fx-burst', 0.7); break;
+  }
+}
+
+function replayStepMs() {
+  const f = replay.frames[replay.i];
+  return (REPLAY_MS[(f && f.fx.kind) || 'plain'] || REPLAY_MS.plain) / replay.speed;
+}
+function replaySchedule() {
+  clearTimeout(replay.timer);
+  if (!replay.playing) return;
+  replay.timer = setTimeout(() => {
+    if (replay.i >= replay.frames.length - 1) { replaySetPlaying(false); return; }
+    replayGo(replay.i + 1, true);
+  }, replayStepMs());
+}
+function replayGo(i, animate) {
+  replay.i = Math.max(0, Math.min(replay.frames.length - 1, i));
+  replayDraw(replay.i, animate !== false);
+  replaySchedule();
+}
+function replaySetPlaying(on) {
+  replay.playing = !!on && replay.frames.length > 0;
+  const btn = document.getElementById('rpPlay');
+  btn.textContent = replay.playing ? '⏸' : '▶';
+  btn.classList.toggle('on', replay.playing);
+  if (!replay.playing) { clearTimeout(replay.timer); return; }
+  if (replay.i >= replay.frames.length - 1) { replay.look = { foe: '', ally: '' }; replayGo(0, true); return; }   // ▶ at the end starts over
+  replaySchedule();
+}
+
+function openReplay(b) {
+  replay.b = b;
+  replay.frames = replayFrames(b);
+  // bottom side = the viewer's, like the arena (side A for the GM and for a spectator)
+  const ally = (!isGM() && !b.spectator) ? b.you : 'a';
+  replay.sides = { ally, foe: ally === 'a' ? 'b' : 'a' };
+  replay.i = 0;
+  replay.speed = 1;
+  replay.look = { foe: '', ally: '' };
+  document.getElementById('rpSpeed').textContent = '1×';
+  const t = battleTrainers(b);
+  const won = s => b.status === 'ended' && b.winner === s;
+  const who = s => `<span class="rp-who${won(s) ? ' win' : ''}">
+    ${avatarHtml(t[s].avatar, t[s].name)}<span>${esc(t[s].name)}</span>${won(s) ? '👑' : ''}</span>`;
+  document.getElementById('rpHead').innerHTML = `${who('a')}<span class="bt-vs">VS</span>${who('b')}`;
+  document.getElementById('replayModal').hidden = false;
+  if (!replay.frames.length) {
+    ['rpFoe', 'rpAlly', 'rpBoxFoe', 'rpBoxAlly', 'rpHazFoe', 'rpHazAlly', 'rpBanner'].forEach(id => { document.getElementById(id).innerHTML = ''; });
+    document.getElementById('rpCap').innerHTML = '<div class="log-line">Nada aconteceu nesta batalha ainda.</div>';
+    document.getElementById('rpCount').textContent = '0/0';
+    document.querySelector('#rpProg i').style.width = '0%';
+    replaySetPlaying(false);
+    return;
+  }
+  replayDraw(0, true);
+  replaySetPlaying(true);
+}
+function closeReplay() {
+  replaySetPlaying(false);
+  replay.fxTimers.forEach(clearTimeout);
+  replay.fxTimers = [];
+  document.getElementById('replayModal').hidden = true;
+}
+function replayScrub(ev) {
+  if (!replay.frames.length) return;
+  const el = document.getElementById('rpProg'), rect = el.getBoundingClientRect();
+  const p = Math.max(0, Math.min(1, (ev.clientX - rect.left) / rect.width));
+  replaySetPlaying(false);
+  replay.look = { foe: '', ally: '' };
+  replayGo(Math.round(p * (replay.frames.length - 1)), false);
+}
+function replayCycleSpeed() {
+  const i = REPLAY_SPEEDS.indexOf(replay.speed);
+  replay.speed = REPLAY_SPEEDS[(i + 1) % REPLAY_SPEEDS.length];
+  document.getElementById('rpSpeed').textContent = String(replay.speed).replace('.', ',') + '×';
+  replaySchedule();
+}
+function onReplayKey(e) {
+  if (document.getElementById('replayModal').hidden) return;
+  if (e.key === 'Escape') { closeReplay(); return; }
+  if (e.key === ' ') { e.preventDefault(); replaySetPlaying(!replay.playing); return; }
+  if (e.key === 'ArrowRight') { e.preventDefault(); replaySetPlaying(false); replayGo(replay.i + 1, true); return; }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); replaySetPlaying(false); replay.look = { foe: '', ally: '' }; replayGo(replay.i - 1, false); }
+}
+
 function onBattleClick(ev) {
   const root = document.getElementById('battleArena');
   const btn = ev.target.closest('[data-bt]');
@@ -4740,6 +5159,7 @@ function onBattleClick(ev) {
     }
     else if (act === 'reopen') patchBattleRoom({ status: 'active' });
     else if (act === 'art') { const b = openBattle(); if (b) openBattleArt(b); }
+    else if (act === 'replay') { const b = allBattles.find(x => x.id === id) || openBattle(); if (b) openReplay(b); }
     else if (act === 'pick') {
       const list = battleForm.party[btn.dataset.side];
       const i = list.indexOf(id);
@@ -5511,6 +5931,14 @@ async function init() {
   document.getElementById('artDownload').addEventListener('click', downloadBattleArt);
   document.getElementById('artCopy').addEventListener('click', copyBattleArt);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.getElementById('artModal').hidden) closeBattleArt(); });
+  document.getElementById('rpClose').addEventListener('click', closeReplay);
+  document.getElementById('replayModal').addEventListener('click', (e) => { if (e.target.id === 'replayModal') closeReplay(); });
+  document.getElementById('rpPlay').addEventListener('click', () => replaySetPlaying(!replay.playing));
+  document.getElementById('rpNext').addEventListener('click', () => { replaySetPlaying(false); replayGo(replay.i + 1, true); });
+  document.getElementById('rpPrev').addEventListener('click', () => { replaySetPlaying(false); replay.look = { foe: '', ally: '' }; replayGo(replay.i - 1, false); });
+  document.getElementById('rpSpeed').addEventListener('click', replayCycleSpeed);
+  document.getElementById('rpProg').addEventListener('click', replayScrub);
+  document.addEventListener('keydown', onReplayKey);
   document.getElementById('roomEditBtn').addEventListener('click', openRoomModal);
   document.getElementById('rmCloseBtn').addEventListener('click', closeRoomModal);
   document.getElementById('rmSaveBtn').addEventListener('click', renameRoom);

@@ -292,6 +292,18 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   transformação acabam quando ele sai de campo, o servidor guarda a forma no nocaute em `battle.faintForm`
   (esquecida se ele for revivido); vai pro jogador em `mine.faintForm` e já resolvida no `seen` público
   (`tera`, `dmax`, `transformSprite`). Na ficha, os Status ficam em duas colunas: HP | SPE, ATK | SPA, DEF | SPD
+- **Replay (🎬)**: botão no cartão da batalha e no topo da arena, que reencena o **log** lance a lance,
+  na ordem em que aconteceu — como o álbum do Gartic Phone. É só cliente (`replayFrames`, `replayDraw`,
+  `replayFx`, janela `#replayModal`): cada entrada do log vira um quadro com o campo inteiro daquele
+  momento (quem estava em campo, HP, estágios, condições, Mega/Tera/Dynamax/transformação, clima,
+  terreno e armadilhas), então dá pra tocar sozinho, pausar, andar de um em um, arrastar a barra e
+  mudar a velocidade (0,5× a 4×; espaço e setas também). Quem bate avança pra cima do outro, quem
+  apanha treme e pisca com um estalo e o dano sobe flutuando; nocaute cai; entrar em campo desliza de
+  fora; Mega, Tera, Dynamax e o fim ganham uma faixa no meio da cena.
+  Cada um só reencena o que já podia ver: o Mestre pelos ids das fichas, com HP em número; jogador e
+  espectador pelos nomes do log (`replayCast` liga nome → sprite pelo próprio time e pelo `seen` do
+  adversário), com o HP do outro lado só em %. Um Zoroark disfarçado continua com a cara do disfarce
+  até a ilusão se desfazer, e aí o quadro troca de nome guardando o HP, que sempre foi dele.
 
 ## Armadilha conhecida
 
