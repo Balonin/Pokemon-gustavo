@@ -259,7 +259,13 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   (criação da batalha ou troca) fica disfarçado do **último Pokémon do time que ainda não desmaiou** (se esse
   é ele mesmo, sem disfarce): `battle.illusion[side] = { mon, as }`, decidido no servidor
   (`applyIllusionOnEntry`). Quem não sabe (adversário, espectador) recebe o disfarce: `publicSideView` monta
-  a visão com espécie/nome/nível/tipos do disfarce e HP/estágios/condições reais; o log grava `as` e
+  a visão com espécie/nome/nível/tipos do disfarce, e **copia também a barra de HP e a condição de status** dele:
+  ao entrar, `applyIllusionOnEntry` guarda em `battle.illusionLook[mon]` o HP % e a condição do disfarce junto
+  dos do Zoroark, e `illusionShown` mostra o HP do disfarce mexido pelo que o Zoroark perde/cura desde então, e a
+  condição do disfarce até a do próprio Zoroark mudar (disfarce de Gengar queimado com 30% → o Zoroark cheio
+  entra "queimado, 30%"). Estágios e confusão são os dele. Quando a ilusão cai, aparecem o HP e a condição
+  reais (o `illusion-end` do log leva `pct`/`status`, que o replay usa; lá o registro do disfarce volta a como
+  estava antes do Zoroark entrar, `sendSnap`); o log grava `as` e
   `logForPlayer` troca o nome. Só **dano de golpe** quebra (`breakIllusion`): HP perdido sem `reason` de fim
   de turno (−10/−5/−1/Dano); clima, status e as frações (`reason: 'residual'`) não. Mestre também desfaz
   pelo botão (`PATCH { illusion: { side, clear } }`). Sair de campo sem ser descoberto: o adversário continua

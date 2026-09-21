@@ -4857,6 +4857,7 @@ function replayFrames(b) {
     };
     const onField = s => (st.field[s] ? st.mons[st.field[s]] : null);
     const ours = s => Object.values(st.mons).filter(m => m.side === s);
+    const isNew = !!key && !st.mons[key];
     const r = ensure(key);
     let fx = null;
     switch (e.k) {
@@ -4865,7 +4866,15 @@ function replayFrames(b) {
         // leaving the field undoes a transformation, as in the games (the server does the same, quietly)
         const leaving = onField(side);
         if (leaving) { leaving.transform = null; leaving.transformSprite = null; }
-        if (r) { r.illusion = gm ? (e.as ? nameOfId(e.as) : null) : (e.asName || null); st.field[side] = key; }
+        if (r) {
+          r.illusion = gm ? (e.as ? nameOfId(e.as) : null) : (e.asName || null);
+          // a fooled viewer can't tell a disguised Zoroark from the real thing, so what happens to it lands on the
+          // disguise's record: keep that record as it was on coming in (none if this is its first time), to give
+          // back to the disguise if it turns out to have been a Zoroark
+          r.sendSnap = isNew ? null : clone({ pct: r.pct, cur: r.cur, max: r.max, stages: r.stages, status: r.status,
+            confused: r.confused, tera: r.tera, dmax: r.dmax, mega: r.mega, fainted: r.fainted });
+          st.field[side] = key;
+        }
         fx = { kind: 'send', side };
         break;
       }
@@ -4923,15 +4932,19 @@ function replayFrames(b) {
       }
       case 'transform-end': { if (r) { r.transform = null; r.transformSprite = null; } fx = { kind: 'flash', side }; break; }
       case 'illusion-end': {
-        // the disguise dropped: for whoever was fooled, who is on the field becomes the real Pokémon,
-        // keeping the HP and conditions that were always really theirs
+        // the disguise dropped: for whoever was fooled, who is on the field becomes the real Pokémon, with its
+        // stages and forms; the disguise copied the HP bar and the condition, so those come from the log (the real
+        // ones). The disguise's record goes back to how it was before the Zoroark came in (or away, if it never
+        // really showed up)
         const oldKey = gm ? key : keyOf(side, e.mon, e.wasName);
         const shown = oldKey && st.mons[oldKey];
         if (r && shown && oldKey !== key) {
           Object.assign(r, { pct: shown.pct, cur: shown.cur, max: shown.max, stages: shown.stages, status: shown.status,
             confused: shown.confused, tera: shown.tera, dmax: shown.dmax, mega: shown.mega, fainted: shown.fainted });
-          delete st.mons[oldKey];
+          if (shown.sendSnap) { Object.assign(shown, shown.sendSnap); shown.sendSnap = null; shown.illusion = null; }
+          else delete st.mons[oldKey];
         }
+        if (r && e.pct !== undefined) { r.pct = e.pct; r.status = e.status || null; r.fainted = e.pct === 0; }
         if (r) r.illusion = null;
         if (!st.field[side] || st.field[side] === oldKey) st.field[side] = key;
         fx = { kind: 'burst', side };

@@ -533,7 +533,11 @@ function fieldView(p, tera) {
    Pokémon of its party that can still fight (none if that one is itself). The other side sees that one —
    name, species, level, types — until a move hits it: only a move's direct damage breaks it, not end-of-turn
    damage (weather, poison, burn, Leech Seed…). battle.illusion[side] = { mon, as } while it's on the field;
-   illusionSeen[mon] = as is how the other side remembers it if it left without being found out. */
+   illusionSeen[mon] = as is how the other side remembers it if it left without being found out.
+   It copies the disguise completely, HP bar and status condition included: illusionLook[mon] = { pct, status,
+   basePct, baseStatus } is the disguise's HP % and condition next to its own, taken as it came in. From then on
+   the other side sees the disguise's HP moved by what the Zoroark itself loses or heals, and the disguise's
+   condition until the Zoroark's own changes (illusionShown). Found out, the real HP and condition show. */
 const hasIllusion = p => /^(illusion|ilus[aã]o)$/i.test(String((p && p.ability) || '').trim());
 function illusionDisguise(data, side, monId, mons) {
   const party = data.party[side];
@@ -555,14 +559,31 @@ function applyIllusionOnEntry(data, side, monId, mons) {
   const p = mons.find(x => x.id === monId);
   const as = p && hasIllusion(p) ? illusionDisguise(data, side, monId, mons) : null;
   data.illusion[side] = as ? { mon: monId, as } : null;
-  if (as) data.illusionSeen[monId] = as;
+  data.illusionLook = data.illusionLook || {};
+  if (as) {
+    data.illusionSeen[monId] = as;
+    const d = mons.find(x => x.id === as), st = x => (STATUS_KEYS.includes((x.battle || {}).status) ? x.battle.status : null);
+    data.illusionLook[monId] = { pct: hpPct(d), status: st(d), basePct: hpPct(p), baseStatus: st(p) };
+  }
 }
-function breakIllusion(data, side) {
+// HP (as a 0…100 bar) and status condition the other side sees on a disguised Pokémon
+function illusionShown(data, p) {
+  const look = (data.illusionLook || {})[p.id];
+  const bt = p.battle || {}, real = hpPct(p), status = STATUS_KEYS.includes(bt.status) ? bt.status : null;
+  if (!look) return { pct: real, status };
+  const pct = real === 0 ? 0 : Math.max(1, Math.min(100, look.pct + real - look.basePct));
+  return { pct, status: status !== look.baseStatus ? status : look.status };
+}
+// `real`: the Pokémon as it is now — its real HP % and condition go in the log, for the replay
+function breakIllusion(data, side, real) {
   const il = (data.illusion || {})[side];
   if (!il) return;
   data.illusion[side] = null;
   if (data.illusionSeen) delete data.illusionSeen[il.mon];
-  pushLog(data, { k: 'illusion-end', side, mon: il.mon, was: il.as });
+  if (data.illusionLook) delete data.illusionLook[il.mon];
+  const bt = (real && real.battle) || {};
+  pushLog(data, { k: 'illusion-end', side, mon: il.mon, was: il.as,
+    ...(real ? { pct: hpPct(real), status: STATUS_KEYS.includes(bt.status) ? bt.status : null } : {}) });
 }
 const STATUS_KEYS = ['brn', 'par', 'slp', 'psn', 'tox', 'frz'];
 // A ficha's `mega` is only which Mega it *can* use; it's active while battle.mega = { form, t1, t2, ability }.
@@ -631,7 +652,10 @@ function logForPlayer(b, you, byId) {
       if (e.mon) out.name = nameOf(theirs && e.as ? e.as : e.mon);
       if (e.as && !theirs) out.asName = nameOf(e.as);   // their own Zoroark: who it's disguised as
       if (e.prev && e.k === 'send') out.prevName = nameOf(theirs && e.prevAs ? e.prevAs : e.prev);
-      if (e.k === 'illusion-end') { out.name = nameOf(e.mon); out.wasName = nameOf(e.was); }
+      if (e.k === 'illusion-end') {
+        out.name = nameOf(e.mon); out.wasName = nameOf(e.was);
+        if (e.pct !== undefined) Object.assign(out, { pct: e.pct, status: e.status || null });
+      }
       if (e.k === 'transform') {
         const targetTheirs = e.targetSide !== you;
         out.targetName = nameOf(targetTheirs && e.targetAs ? e.targetAs : e.target);
@@ -774,8 +798,14 @@ function battleMonLookup(b, roomMons) {
 // the ones already used. Moves, Status, ability and exact HP stay on the server.
 function publicSideView(b, s, byId) {
   const active = byId(b.active[s]);
-  // under an illusion it looks like the Pokémon it copies (with its own HP, stages and conditions)
-  const disguised = (p, asId) => { const d = asId && byId(asId); return d ? { ...d, id: p.id, battle: p.battle } : p; };
+  // under an illusion it looks like the Pokémon it copies — HP bar and status condition too (illusionShown);
+  // stages, confusion, Tera, Dynamax… are its own
+  const disguised = (p, asId) => {
+    const d = asId && byId(asId);
+    if (!d) return p;
+    const shown = illusionShown(b, p);
+    return { ...d, id: p.id, battle: { ...(p.battle || {}), hp: shown.pct, maxHp: 100, status: shown.status } };
+  };
   const activeLook = active ? disguised(active, illusionOf(b, s, active.id)) : null;
   return {
     partySize: b.party[s].map(byId).filter(Boolean).length,
@@ -1308,7 +1338,7 @@ app.patch('/api/pokemon/:id/battle', auth, async (req, res) => {
           if (!side) continue;
           const { id: battleId, ...bdata } = b;
           events.forEach(e => pushLog(bdata, { ...e, side, mon: p.id }));   // still logged under the disguise
-          if (hit && illusionOf(bdata, side, p.id)) breakIllusion(bdata, side);
+          if (hit && illusionOf(bdata, side, p.id)) breakIllusion(bdata, side, { ...p, battle: nb });
           if (fainted) {
             bdata.faintForm = { ...(bdata.faintForm || {}), [p.id]: {
               dmax: nb.dmax === 'gmax' || nb.dmax === 'dmax' ? nb.dmax : null,
@@ -1396,7 +1426,7 @@ app.post('/api/battles', auth, async (req, res) => {
       active: { a: null, b: null },
       revealed: { a: [], b: [] },   // everything that has been on the field, in order
       winner: null, tera: { a: null, b: null }, dmax: { a: null, b: null }, mega: { a: null, b: null },
-      weather: null, terrain: null, hazards: { a: {}, b: {} }, illusion: { a: null, b: null }, illusionSeen: {},
+      weather: null, terrain: null, hazards: { a: {}, b: {} }, illusion: { a: null, b: null }, illusionSeen: {}, illusionLook: {},
       createdAt: new Date().toISOString(), log: []
     };
     const id = uid();
@@ -1460,7 +1490,7 @@ app.patch('/api/battles/:id', auth, async (req, res) => {
     if (body.illusion) {   // GM: the disguise found out by other means
       const side = body.illusion.side;
       if (!SIDES.includes(side) || !illusionOf(data, side, data.active[side])) return res.status(400).json({ error: 'ilusao_invalida' });
-      breakIllusion(data, side);
+      breakIllusion(data, side, await store.getPokemon(data.active[side]));
     }
     if (body.transform) {
       // Imposter / Transform: the Pokémon on the field copies the one facing it. The GM's client works out the
