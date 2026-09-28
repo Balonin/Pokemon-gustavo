@@ -698,7 +698,22 @@ body.in-room { max-width: none; padding: 12px; }
 @keyframes wx-drift { to { background-position: 48px 96px, 0 0; } }
 @keyframes wx-sand { to { background-position: 144px 24px, 0 0; } }
 @keyframes wx-wind { to { background-position: -160px 0, 0 0; } }
-@media (prefers-reduced-motion: reduce) { .wx-fx { animation: none !important; } }
+/* "Reduzir movimento" ligado no sistema: só parar a animação deixaria as gotas paradas no ar, que
+   parece bug. Aqui a chuva, a areia e a neve viram a cor do clima, sem partícula nenhuma. O sol não
+   tem animação, então fica como está. */
+@media (prefers-reduced-motion: reduce) {
+  .wx-rain .wx-fx, .wx-heavyrain .wx-fx, .wx-sand .wx-fx,
+  .wx-hail .wx-fx, .wx-snow .wx-fx, .wx-winds .wx-fx {
+    animation: none !important;
+    background-image: none !important;
+  }
+  .wx-rain .wx-fx { background-color: rgba(40, 70, 130, 0.22); }
+  .wx-heavyrain .wx-fx { background-color: rgba(20, 40, 90, 0.4); }
+  .wx-sand .wx-fx { background-color: rgba(186, 140, 62, 0.32); }
+  .wx-hail .wx-fx { background-color: rgba(150, 190, 220, 0.25); }
+  .wx-snow .wx-fx { background-color: rgba(220, 236, 255, 0.28); }
+  .wx-winds .wx-fx { background-color: rgba(120, 160, 150, 0.16); }
+}
 .bt-scene[class*=" tr-"]::before { content: ''; position: absolute; left: 0; right: 0; top: 26%; bottom: 0; pointer-events: none; background: color-mix(in srgb, var(--trc) 32%, transparent); }
 .tr-electric { --trc: #f8d830; }
 .tr-grassy { --trc: #3c9c3c; }
@@ -762,7 +777,7 @@ body.in-room { max-width: none; padding: 12px; }
 .rp-slot.fx-heal { animation: rp-glow .6s steps(4, end) both; }
 .rp-spark { position: absolute; inset: 16%; z-index: 4; pointer-events: none; border-radius: 50%; background: radial-gradient(circle, #fff 0 30%, #ffd76a 30% 56%, #f86038 56% 68%, transparent 70%); animation: rp-spark .38s steps(4, end) both; }
 @keyframes rp-spark { from { transform: scale(0.25); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
-.rp-float { position: absolute; left: 50%; top: 28%; z-index: 5; pointer-events: none; font-family: var(--font-pixel); font-size: 0.78rem; color: #ff7060; text-shadow: 2px 2px 0 var(--outline); animation: rp-float 1s steps(10, end) both; }
+.rp-float { position: absolute; left: 50%; top: 28%; transform: translate(-50%, 0); z-index: 5; pointer-events: none; font-family: var(--font-pixel); font-size: 0.78rem; color: #ff7060; text-shadow: 2px 2px 0 var(--outline); animation: rp-float 1s steps(10, end) both; }
 .rp-float.up { color: #8ce88c; }
 @keyframes rp-float { from { opacity: 0; transform: translate(-50%, 20px); } 20% { opacity: 1; } to { opacity: 0; transform: translate(-50%, -36px); } }
 .rp-banner {
@@ -782,7 +797,13 @@ body.in-room { max-width: none; padding: 12px; }
 .rp-ctl { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .rp-ctl .mini-btn.on { background: var(--red); color: #fff; }
 @media (max-width: 760px) { .rp-foe { width: 34%; top: 4%; } .rp-ally { width: 46%; } }
-@media (prefers-reduced-motion: reduce) { .rp-slot, .rp-slot .spr, .rp-spark, .rp-float, .rp-banner { animation: none !important; } }
+/* idem no replay: o estalo do golpe é só movimento e sem a animação ficaria uma bola parada em cima
+   do Pokémon, então some. O dano e as faixas continuam, parados. Nocaute não depende de animação: a
+   classe `down` já deixa o Pokémon caído. */
+@media (prefers-reduced-motion: reduce) {
+  .rp-slot, .rp-slot .spr, .rp-float, .rp-banner { animation: none !important; }
+  .rp-spark { display: none; }
+}
 
 .bt-panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .bt-panel { --fill: var(--panel); --edge: #5a6a7a; padding: 14px 15px; display: flex; flex-direction: column; gap: 9px; min-width: 0; container-type: inline-size; }
