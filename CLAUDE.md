@@ -91,7 +91,15 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   (`POST /api/account/register` e `/login`, `GET /api/account/rooms`, `PUT /api/account/password`,
   criar sala e entrar em sala) anda no **token de conta**; tudo que é de dentro da sala continua no
   **token da sala** (`members.token`). São dois tokens diferentes, guardados em `gustavo_account` e
-  `gustavo_sessions` no `localStorage`.
+  `gustavo_sessions` no `localStorage`. Cada sessão salva carrega o `account` de quem a abriu
+  (`sameAccount`): duas contas no mesmo navegador dividem esse `localStorage`, e sem o carimbo a lista
+  "Minhas campanhas" casava a sala só pelo id e entrava com o token da outra conta — o rótulo vinha do
+  servidor e o token da sessão velha. Sessão de outra conta fica escondida até ela voltar; sessão sem
+  carimbo (de antes do login) aparece sempre, que é como o jogador legado entra pra se vincular. Se
+  mesmo assim o token levar a outra conta, `enterRoom` devolve `false`, esquece a sessão e
+  `enterKnownRoom` entra de novo pela conta certa.
+  Duas contas **ao mesmo tempo** no mesmo navegador não dá (o `localStorage` é um só): use uma janela
+  anônima ou outro perfil.
   **A conta não é dona de nada**: ela é *vinculada* ao treinador de cada sala (`members.user_id`), e o
   `owner` da ficha continua sendo o nome do treinador. Por isso o login entrou numa campanha que já
   estava rodando sem migrar uma ficha sequer, e dois "Diogo" em campanhas diferentes seguem sendo duas

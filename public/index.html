@@ -1805,9 +1805,13 @@ function saveAccount(a) {
 function loadSessions() {
   try { return JSON.parse(localStorage.getItem('gustavo_sessions') || '[]'); } catch(e) { return []; }
 }
+// Two accounts on the same browser share this list, so each session says whose it is: without that
+// the campaign would be matched by room alone and you would go in holding the other account's token.
+const sameAccount = (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase();
 function saveSessionLocal(sess) {
-  const all = loadSessions().filter(s => !(s.roomId === sess.roomId));
-  all.unshift(sess);
+  const s = { ...sess, account: sess.account || (account ? account.login : '') };
+  const all = loadSessions().filter(x => !(x.roomId === s.roomId && sameAccount(x.account, s.account)));
+  all.unshift(s);
   localStorage.setItem('gustavo_sessions', JSON.stringify(all.slice(0, 8)));
 }
 // a room that's gone (deleted campaign, dead token) leaves the recent list; the others stay
@@ -5939,12 +5943,15 @@ async function submitAccount() {
   } catch (e) { alert(errMsg(e)); }
 }
 async function loadMyRooms() {
-  if (!account) { myRooms = []; return; }
+  const asked = account && account.token;   // logging out while this is in flight must not refill the list
+  if (!asked) { myRooms = []; return; }
   try {
     const r = await API.account('GET', '/account/rooms');
+    if (!account || account.token !== asked) return;
     myRooms = r.rooms || [];
     if (r.login && r.login !== account.login) saveAccount({ ...account, login: r.login });
   } catch (e) {
+    if (!account || account.token !== asked) return;
     myRooms = [];
     if (e.message === 'conta_invalida' || e.message === 'sem_conta') saveAccount(null);   // session cut off elsewhere
   }
@@ -5972,12 +5979,16 @@ async function changeAccountPassword() {
 /* The campaigns of the account, plus any room this device still holds a session for — that is how a
    campaign from before the login shows up, so you can go in and create your account from inside it. */
 function lobbyRooms() {
+  const me = account ? account.login : '';
   const byId = new Map();
-  myRooms.forEach(r => byId.set(r.roomId, { ...r }));
+  myRooms.forEach(r => byId.set(r.roomId, { ...r, account: me }));
   loadSessions().forEach(s => {
     const cur = byId.get(s.roomId);
-    if (cur) { cur.token = s.token; return; }
-    byId.set(s.roomId, { roomId: s.roomId, roomName: s.roomName, name: s.name, role: s.role, character: s.character, token: s.token, unlinked: true });
+    // the stored token only serves the account that opened it; anyone else asks the room for a new one
+    if (cur) { if (sameAccount(s.account, me)) cur.token = s.token; return; }
+    // a session of another account on this browser stays out of sight until that account comes back
+    if (s.account && !sameAccount(s.account, me)) return;
+    byId.set(s.roomId, { roomId: s.roomId, roomName: s.roomName, name: s.name, role: s.role, character: s.character, token: s.token, account: s.account || '', unlinked: true });
   });
   return [...byId.values()];
 }
@@ -5985,7 +5996,7 @@ function renderRecentRooms() {
   const rooms = lobbyRooms();
   const box = document.getElementById('recentRooms');
   const list = document.getElementById('recentRoomsList');
-  if (!rooms.length) { box.style.display = 'none'; return; }
+  if (!rooms.length) { box.style.display = 'none'; list.innerHTML = ''; return; }   // nothing of another account left in the DOM
   box.style.display = 'block';
   list.innerHTML = '';
   rooms.forEach(r => {
@@ -6001,9 +6012,11 @@ function renderRecentRooms() {
 }
 // a session already on this device goes straight in; otherwise the account asks the room for a token
 async function enterKnownRoom(r) {
-  if (r.token) { await enterRoom(r); return; }
+  if (r.token && await enterRoom(r) !== false) return;
+  if (!account) { renderRecentRooms(); return; }
   try {
     const j = await API.joinRoom(r.roomId, '');
+    if (j.pending) { alert('Esse treinador ainda não tem conta. Peça pro Mestre aprovar seu pedido.'); return; }
     await enterRoom({ roomId: r.roomId, role: j.role, name: j.trainer, token: j.token, roomName: j.name });
   } catch (e) { alert(errMsg(e)); }
 }
@@ -6014,10 +6027,18 @@ async function enterRoom(sess) {
   currentTrainer = sess.name;
   try {
     const st = await API.state();
+    // a leftover token of another account (same browser, campaign entered by someone else before):
+    // drop it and let the caller come back in through the account that is logged in now
+    if (account && st.me.account && !sameAccount(st.me.account, account.login)) {
+      forgetSession(sess.roomId);
+      session = null; API.token = null;
+      return false;
+    }
     currentRoom = st.room;
     session.role = st.me.role;
     session.name = st.me.name;
     session.roomName = st.room.name;
+    session.account = st.me.account || (account ? account.login : '');
     currentTrainer = st.me.name;
     saveSessionLocal(session);
     applyState(st);
@@ -6181,6 +6202,8 @@ async function linkAccount() {
     const r = await API.call('POST', '/me/link', { login, pass });
     saveAccount({ token: r.token, login: r.login });
     myAccount = r.login;
+    session.account = r.login;
+    saveSessionLocal(session);
     closeLinkModal();
     await refreshState();
     alert(`Pronto. "${session.name}" agora é da conta ${r.login} — entre de qualquer aparelho com ela.`);
