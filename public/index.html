@@ -337,6 +337,28 @@ body.in-room { max-width: none; padding: 12px; }
 .ts-private { flex: 1; display: flex; align-items: center; justify-content: center; text-align: center; padding: 20px; font-size: 0.8rem; line-height: 1.6; color: var(--ink-soft); }
 .ts-private[hidden], #tsNotes[hidden], .trainer-sheet .btn[hidden], .trainer-sheet .shiny-btn[hidden] { display: none; }
 .trainer-sheet.readonly .stat-box { cursor: default; }
+.trainer-sheet .stats-grid { grid-template-rows: repeat(2, 1fr); }
+/* what the trainer carries: Pokécoins and Pokébolas (private: not on someone else's profile) */
+.ts-bag { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex-shrink: 0; }
+.ts-bag[hidden], .ts-badge-btn[hidden] { display: none; }
+.ts-item { --fill: var(--panel); --edge: #5a6a7a; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 8px; row-gap: 3px; align-items: center; padding: 8px 10px; cursor: text; }
+.ts-item-ico { grid-row: 1 / 3; width: 30px; height: 30px; image-rendering: pixelated; }
+.ts-coin { display: flex; align-items: center; justify-content: center; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffe680, #d9a520 60%, #8a6210); color: #5a3a00; font-family: var(--font-pixel); font-size: 0.7rem; box-shadow: inset 0 0 0 2px #8a6210; }
+.ts-item-l { font-family: var(--font-pixel); font-size: 0.5rem; color: var(--gold); }
+.ts-item input { width: 100%; min-width: 0; padding: 3px 6px; font-size: 1rem; }
+.ts-badge-btn { flex-shrink: 0; }
+/* the badge case, like the DPPt Trainer Case: 8 slots, an empty one is only the dim hollow of its badge */
+.badge-modal { max-width: 440px; }
+.badge-case { margin-top: 14px; padding: 10px; background: #bcd8e8; border-radius: 12px; box-shadow: inset 0 0 0 3px #88aec4, inset 0 0 0 5px #e4f2fa; }
+.badge-case-in { background: #5d5d5d; border-radius: 8px; padding: 10px 12px 14px; box-shadow: inset 0 0 0 2px #3c3c3c, inset 0 0 0 4px #7a7a7a; }
+.badge-case-title { font-family: var(--font-pixel); font-size: 0.55rem; color: #e8e8e8; text-shadow: 1px 1px 0 #2a2a2a; margin-bottom: 10px; }
+.badge-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.badge-slot { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; padding: 6px; border: none; border-radius: 50%; background: #4a4a4a; box-shadow: inset 2px 2px 0 #333, inset -2px -2px 0 #6a6a6a; cursor: default; }
+.badge-slot img { width: 100%; height: 100%; object-fit: contain; }
+.badge-slot:not(.got) img { filter: brightness(0); opacity: 0.22; }
+.badge-slot.can { cursor: pointer; }
+.badge-slot.can:hover { box-shadow: inset 2px 2px 0 #333, inset -2px -2px 0 #6a6a6a, 0 0 0 2px var(--gold); }
+.badge-slot:disabled { opacity: 0.6; }
 /* a trainer's icon opens their character sheet, like a profile */
 [data-profile], [data-profile-battle], [data-open-trainer] { cursor: pointer; }
 .bt-trainer[data-profile]:hover span, .bl-who[data-profile-battle]:hover span { text-decoration: underline; }
@@ -1135,6 +1157,19 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
             <div class="col-stats">
               <div class="points-banner" id="tsBanner">Status do treinador · livres, até 90</div>
               <div class="stats-grid" id="tsStats"></div>
+              <div class="ts-bag" id="tsBag">
+                <label class="ts-item" title="Pokécoins">
+                  <span class="ts-item-ico ts-coin">₽</span>
+                  <span class="ts-item-l">Pokécoins</span>
+                  <input id="tsCoins" inputmode="numeric" maxlength="8" autocomplete="off">
+                </label>
+                <label class="ts-item" title="Pokébolas">
+                  <img class="ts-item-ico" src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png" alt="">
+                  <span class="ts-item-l">Pokébolas</span>
+                  <input id="tsBalls" inputmode="numeric" maxlength="4" autocomplete="off">
+                </label>
+              </div>
+              <button class="btn secondary small ts-badge-btn" id="tsBadgesBtn"></button>
             </div>
             <div class="col-moves">
               <div class="ts-notes-box">
@@ -1395,6 +1430,23 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
     <div class="top-actions" style="margin:16px 0 0;">
       <button class="btn secondary small" id="maCancelBtn">Cancelar</button>
       <button class="btn small" id="maOkBtn">Pronto</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== THE BADGE CASE (Sinnoh) ===== -->
+<div class="modal-backdrop" id="badgeModal" hidden>
+  <div class="card modal badge-modal" role="dialog" aria-modal="true" aria-labelledby="bcTitle">
+    <h2 id="bcTitle">Insígnias</h2>
+    <div class="badge-case">
+      <div class="badge-case-in">
+        <div class="badge-case-title">◈ LEAGUE BADGE ◈</div>
+        <div class="badge-grid" id="bcGrid"></div>
+      </div>
+    </div>
+    <div class="sub" style="margin:10px 0 0;" id="bcNote"></div>
+    <div class="top-actions" style="margin:14px 0 0;">
+      <button class="btn secondary small" id="bcCloseBtn">Fechar</button>
     </div>
   </div>
 </div>
@@ -2389,7 +2441,7 @@ function populateSelect(sel, options, allowNone) {
 // ownerKey: for a new ficha, which trainer it will belong to (GM only; defaults to yourself)
 // mega: open its Mega sheet (if it has a Mega)
 function openSheet(mon, ownerKey, mega) {
-  if (tsCtx) { tsCtx = null; document.getElementById('trainerSheetHost').style.display = 'none'; }
+  if (tsCtx) { tsCtx = null; if (badgeCtx) closeBadgeCase(); document.getElementById('trainerSheetHost').style.display = 'none'; }
   // missing fields (old or partial fichas) fall back to the blank ficha's defaults
   draft = mon ? { ...blankDraft(), ...JSON.parse(JSON.stringify(mon)) } : blankDraft();
   if (!draft.distributed) draft.distributed = blankDraft().distributed;
@@ -3057,19 +3109,24 @@ function applyMonArt() {
   c.done(c.art, c.crop);
 }
 // ===== Trainer sheet =====
-// The character as a ficha: six Status given freely (0…90, the same cap as a Pokémon; the corner shows the
-// crit margin, 10% of it), one notes box where a Pokémon has moves, and the picture with the name. Each
-// trainer edits their own (the icon at the top); the GM also opens any player's from the sidebar.
-const TRAINER_STATS = ['for', 'con', 'sab', 'int', 'des', 'car'];   // grid order: FOR CON / SAB INT / DES CAR
-const TRAINER_STAT_LABEL = { for: 'FOR', con: 'CON', sab: 'SAB', int: 'INT', des: 'DES', car: 'CAR' };
-const TRAINER_STAT_NAME = { for: 'Força', con: 'Constituição', sab: 'Sabedoria', int: 'Inteligência', des: 'Destreza', car: 'Carisma' };
+// The character as a ficha: four Status given freely (0…90, the same cap as a Pokémon; the corner shows the
+// crit margin, 10% of it), Pokécoins and Pokébolas, one notes box where a Pokémon has moves, the picture
+// with the name and the badge case. Each trainer edits their own (the icon at the top); the GM also opens
+// any player's from the sidebar, and is the only one who puts badges in the case.
+const TRAINER_STATS = ['for', 'int', 'des', 'car'];   // grid order: FOR INT / DES CAR
+const TRAINER_STAT_LABEL = { for: 'FOR', int: 'INT', des: 'DES', car: 'CAR' };
+const TRAINER_STAT_NAME = { for: 'Força', int: 'Inteligência', des: 'Destreza', car: 'Carisma' };
+// Sinnoh's gym badges, in order (PokeAPI's badge sprites 25…32)
+const BADGES = ['Coal', 'Forest', 'Cobble', 'Fen', 'Relic', 'Mine', 'Icicle', 'Beacon'].map((name, i) => ({
+  name: name + ' Badge', img: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/badges/${25 + i}.png` }));
 let mySheet = null;     // own trainer sheet from the server
 let tsCtx = null;       // { key: login name, sheet: the draft, editing: stat being edited, crop }
 function trainerSheetOf(key) {
   const src = key === currentTrainer ? mySheet : ((allMembers.find(x => x.name === key) || {}).sheet || null);
   const stats = {};
   TRAINER_STATS.forEach(k => { stats[k] = (src && src.stats && src.stats[k]) || 0; });
-  return { stats, notes: (src && src.notes) || '', art: (src && src.art) || null };
+  return { stats, coins: (src && src.coins) || 0, balls: (src && src.balls) || 0,
+    notes: (src && src.notes) || '', art: (src && src.art) || null, badges: (src && src.badges) || [] };
 }
 function showTrainerSheetHost(readonly) {
   if (draft) closeSheet();
@@ -3080,12 +3137,15 @@ function showTrainerSheetHost(readonly) {
   ['tsSaveBtn', 'tsCancelBtn', 'tsArtBtn'].forEach(id => { document.getElementById(id).hidden = readonly; });
   document.getElementById('tsNotes').hidden = readonly;
   document.getElementById('tsPrivate').hidden = !readonly;
+  document.getElementById('tsBag').hidden = readonly;   // Pokécoins and Pokébolas are private, like the notes
   document.getElementById('tsBanner').textContent = readonly ? 'Status do treinador' : 'Status do treinador · livres, até 90';
 }
 function openTrainerSheet(key) {
   tsCtx = { key, sheet: trainerSheetOf(key), editing: null, crop: null, readonly: false };
   showTrainerSheetHost(false);
   document.getElementById('tsNotes').value = tsCtx.sheet.notes;
+  document.getElementById('tsCoins').value = tsCtx.sheet.coins;
+  document.getElementById('tsBalls').value = tsCtx.sheet.balls;
   renderTrainerSheet();
 }
 // Someone else's character as a profile (clicking their icon): name, picture and Status, read-only.
@@ -3093,7 +3153,7 @@ function openTrainerSheet(key) {
 function openTrainerProfile(info) {
   const stats = {};
   TRAINER_STATS.forEach(k => { stats[k] = info.stats ? (info.stats[k] || 0) : null; });
-  tsCtx = { key: null, info, sheet: { stats, notes: '', art: info.art || null }, editing: null, readonly: true };
+  tsCtx = { key: null, info, sheet: { stats, notes: '', art: info.art || null, badges: info.badges || [] }, editing: null, readonly: true };
   showTrainerSheetHost(true);
   document.getElementById('tsPrivate').textContent = info.stats ? '🔒 As anotações são privadas: só o próprio treinador e o Mestre veem.'
     : (info.kind === 'npc' ? 'NPCs não têm ficha de treinador.' : 'Esse treinador ainda não preencheu a ficha.');
@@ -3112,6 +3172,7 @@ function tsTrainer() { return tsCtx.info || trainerOf(tsCtx.key); }
 function closeTrainerSheet() {
   if (!tsCtx) return;
   tsCtx = null;
+  if (badgeCtx) closeBadgeCase();
   document.getElementById('trainerSheetHost').style.display = 'none';
   if (battleMode) { document.getElementById('battlePanel').style.display = 'block'; renderBattle(); }
   else if (!draft) document.getElementById('emptyState').style.display = 'block';
@@ -3134,6 +3195,72 @@ function renderTrainerSheet() {
   document.getElementById('tsStats').innerHTML = TRAINER_STATS.map(trainerStatBox).join('');
   const input = document.querySelector('#tsStats .ts-val');
   if (input) { input.focus(); input.select(); }
+  renderBadgeButton();
+}
+function renderBadgeButton() {
+  const btn = document.getElementById('tsBadgesBtn');
+  const npc = tsCtx.readonly && !tsCtx.info.stats && tsCtx.info.kind === 'npc';
+  btn.hidden = npc;
+  btn.textContent = `🏅 Insígnias ${tsCtx.sheet.badges.length}/${BADGES.length}`;
+}
+// Pokécoins / Pokébolas: only digits while typing
+function onTrainerBagInput(ev) {
+  const digits = ev.target.value.replace(/\D/g, '');
+  if (digits !== ev.target.value) ev.target.value = digits;
+}
+
+// ===== Badge case =====
+// Everyone sees theirs (and on a profile, the other trainer's); only the GM clicks a slot to give or take
+// that badge, saved at once on its own route (a "Salvar Ficha" never touches the badges).
+let badgeCtx = null;   // { key, badges, busy }
+function openBadgeCase() {
+  if (!tsCtx) return;
+  badgeCtx = { key: tsCtx.key, badges: [...tsCtx.sheet.badges], busy: false };
+  const t = tsTrainer();
+  document.getElementById('bcTitle').textContent = 'Insígnias · ' + t.name;
+  renderBadgeCase();
+  document.getElementById('badgeModal').hidden = false;
+}
+function badgeCaseEditable() { return !!(badgeCtx && badgeCtx.key && isGM()); }
+function renderBadgeCase() {
+  if (!badgeCtx) return;
+  const can = badgeCaseEditable();
+  document.getElementById('bcGrid').innerHTML = BADGES.map((b, i) => {
+    const got = badgeCtx.badges.includes(i);
+    const title = got ? b.name : (can ? `${b.name} — clique pra dar` : 'Ainda não conquistada');
+    return `<button class="badge-slot${got ? ' got' : ''}${can ? ' can' : ''}" data-badge="${i}" title="${esc(title)}"
+      ${can && !badgeCtx.busy ? '' : (can ? 'disabled' : 'tabindex="-1"')} aria-label="${esc(title)}"><img src="${b.img}" alt=""></button>`;
+  }).join('');
+  document.getElementById('bcNote').textContent = can
+    ? 'Clique num espaço pra dar a insígnia; clique de novo pra tirar. Salva na hora.'
+    : `${badgeCtx.badges.length} de ${BADGES.length} insígnias. Quem dá as insígnias é o Mestre.`;
+}
+function closeBadgeCase() {
+  document.getElementById('badgeModal').hidden = true;
+  badgeCtx = null;
+}
+async function onBadgeSlotClick(ev) {
+  const slot = ev.target.closest('[data-badge]');
+  if (!slot || !badgeCaseEditable() || badgeCtx.busy) return;
+  const i = parseInt(slot.dataset.badge, 10), ctx = badgeCtx;
+  const badges = ctx.badges.includes(i) ? ctx.badges.filter(x => x !== i) : [...ctx.badges, i].sort((a, b) => a - b);
+  ctx.busy = true;
+  ctx.badges = badges;   // shown at once
+  renderBadgeCase();
+  try {
+    const r = await API.call('PUT', '/members/' + encodeURIComponent(ctx.key) + '/badges', { badges });
+    ctx.badges = r.sheet.badges;
+    if (ctx.key === currentTrainer) mySheet = { ...(mySheet || {}), badges: r.sheet.badges };
+    // the open sheet shows the new count without losing what's being edited there
+    if (tsCtx && tsCtx.key === ctx.key) { tsCtx.sheet.badges = [...r.sheet.badges]; renderBadgeButton(); }
+    refreshState();
+  } catch (e) {
+    ctx.badges = ctx.badges.includes(i) ? ctx.badges.filter(x => x !== i) : [...ctx.badges, i].sort((a, b) => a - b);   // undo
+    alert(errMsg(e));
+  } finally {
+    ctx.busy = false;
+    if (badgeCtx === ctx) renderBadgeCase();
+  }
 }
 // who it is (name, icon, picture): redrawn when the state comes in, without touching what's being edited
 function renderTrainerHead() {
@@ -3212,11 +3339,13 @@ async function saveTrainerSheet() {
   if (!tsCtx) return;
   const s = tsCtx.sheet;
   s.notes = document.getElementById('tsNotes').value;
+  s.coins = Math.min(99999999, parseInt(document.getElementById('tsCoins').value, 10) || 0);
+  s.balls = Math.min(9999, parseInt(document.getElementById('tsBalls').value, 10) || 0);
   const btn = document.getElementById('tsSaveBtn');
   btn.disabled = true;
   try {
     const art = s.art && s.art.data ? { id: await uploadImageData(s.art.data), pixel: !!s.art.pixel } : (s.art || null);
-    const body = { sheet: { stats: s.stats, notes: s.notes, art } };
+    const body = { sheet: { stats: s.stats, coins: s.coins, balls: s.balls, notes: s.notes, art } };
     const path = tsCtx.key === currentTrainer ? '/me/sheet' : '/members/' + encodeURIComponent(tsCtx.key) + '/sheet';
     const key = tsCtx.key;
     const r = await API.call('PUT', path, body);
@@ -5392,7 +5521,7 @@ function updateBattleNotice() {
 }
 
 function setBattleMode(on, battleId) {
-  if (tsCtx) { tsCtx = null; document.getElementById('trainerSheetHost').style.display = 'none'; }
+  if (tsCtx) { tsCtx = null; if (badgeCtx) closeBadgeCase(); document.getElementById('trainerSheetHost').style.display = 'none'; }
   battleMode = on;
   battleForm = null;
   if (on) {
@@ -5920,7 +6049,7 @@ function showLobby() {
   closeRoomModal();
   closeKickModal();
   if (monArtCtx) closeMonArtModal();
-  tsCtx = null; document.getElementById('trainerSheetHost').style.display = 'none';
+  tsCtx = null; if (badgeCtx) closeBadgeCase(); document.getElementById('trainerSheetHost').style.display = 'none';
   clearTimeout(pollTimer); pollTimer = null; lastStateRaw = '';
   closeLinkModal();
   myAccount = ''; roomClaims = [];
@@ -6274,7 +6403,7 @@ async function init() {
     const tp = document.getElementById('teamsPanel');
     const showing = tp.style.display === 'block';
     if (battleMode) setBattleMode(false);
-    if (tsCtx) { tsCtx = null; document.getElementById('trainerSheetHost').style.display = 'none'; }
+    if (tsCtx) { tsCtx = null; if (badgeCtx) closeBadgeCase(); document.getElementById('trainerSheetHost').style.display = 'none'; }
     tp.style.display = showing ? 'none' : 'block';
     document.getElementById('sheetHost').style.display = 'none';
     document.getElementById('emptyState').style.display = showing ? 'block' : 'none';
@@ -6386,6 +6515,12 @@ async function init() {
   document.getElementById('tsCancelBtn').addEventListener('click', closeTrainerSheet);
   document.getElementById('tsSaveBtn').addEventListener('click', saveTrainerSheet);
   document.getElementById('tsArtBtn').addEventListener('click', openTrainerArtModal);
+  ['tsCoins', 'tsBalls'].forEach(id => document.getElementById(id).addEventListener('input', onTrainerBagInput));
+  document.getElementById('tsBadgesBtn').addEventListener('click', openBadgeCase);
+  document.getElementById('bcGrid').addEventListener('click', onBadgeSlotClick);
+  document.getElementById('bcCloseBtn').addEventListener('click', closeBadgeCase);
+  document.getElementById('badgeModal').addEventListener('click', (e) => { if (e.target.id === 'badgeModal') closeBadgeCase(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && badgeCtx) closeBadgeCase(); });
   const tsStats = document.getElementById('tsStats');
   tsStats.addEventListener('click', onTrainerStatsClick);
   tsStats.addEventListener('input', onTrainerStatInput);

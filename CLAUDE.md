@@ -142,8 +142,12 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   O Mestre vê os dois: na ficha ("Ash · jogador: Diogo"), na barra lateral, na dica da coluna de
   treinadores e na escolha de dono de ficha nova (`loginOf`, que é o `owner` da ficha)
 - **Ficha do treinador**: o ícone do topo abre a ficha do personagem, no formato da ficha de Pokémon —
-  seis Status livres **FOR, CON, SAB, INT, DES, CAR** (0…90, mesmo teto; sem pool de pontos; o canto mostra
-  a margem de crítico, 10%), **um quadro de anotações** no lugar dos golpes e a imagem com o nome (a
+  quatro Status livres **FOR, INT, DES, CAR** (0…90, mesmo teto; sem pool de pontos; o canto mostra
+  a margem de crítico, 10%), **Pokécoins** (`coins`, até 99.999.999) e **Pokébolas** (`balls`, até 9999) —
+  privados como as anotações —, o **estojo de insígnias** de Sinnoh (`badges` = índices 0…7, Coal → Beacon,
+  sprites 25…32 de `sprites/badges` do PokeAPI; tabela `BADGES`): todo mundo vê, só o **Mestre** clica num
+  espaço pra dar/tirar, e salva na hora por rota própria (`PUT /api/members/:nome/badges`) — o "Salvar
+  Ficha" nunca mexe nelas (o servidor mantém as que estão lá) —, **um quadro de anotações** no lugar dos golpes e a imagem com o nome (a
   imagem própria da ficha, em alta, pelo 🖼 — mesma janela/enquadramento da ficha de Pokémon — ou o ícone).
   "Nome, ícone e música" abre a janela de caracterização. Fica em `members.sheet` (JSON, em todos os tokens
   do nome, como o avatar; `cleanTrainerSheet`). Cada um salva a sua (`PUT /api/me/sheet`); o Mestre vê
@@ -153,8 +157,8 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   batalhas; pro Mestre também o topo da barra lateral e o dono da ficha — `data-profile`,
   `data-profile-battle`, `data-open-trainer`, `openBattleTrainer`). Mestre: a ficha completa e editável (NPC:
   perfil sem Status). Jogador: a própria, editável; a de outro, **só leitura** (`openTrainerProfile`) com
-  nome, imagem e Status — que vêm em `trainerInfo` (`stats`, `art`). **As anotações nunca saem do servidor
-  pra outro jogador**
+  nome, imagem, Status e insígnias — que vêm em `trainerInfo` (`stats`, `art`, `badges`). **As anotações,
+  Pokécoins e Pokébolas nunca saem do servidor pra outro jogador**
 - Cada pessoa recebe um **token de sala** salvo no `localStorage` e enviado no header
   `Authorization: Bearer <token>` (o token de conta usa o mesmo header, só nas rotas do lobby)
 - **As permissões são aplicadas no servidor**, não no cliente:

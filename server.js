@@ -548,9 +548,16 @@ function parseTheme(text) {
 }
 function themeText(theme) { return theme ? JSON.stringify(theme) : ''; }
 
-/* The trainer's own sheet: six Status distributed freely (whole numbers 0…90 — the same cap of 90 as a
-   Pokémon), one notes box and an optional picture for the sheet ({ id, pixel } in media, like a ficha's). */
-const TRAINER_STATS = ['for', 'con', 'sab', 'int', 'des', 'car'];
+/* The trainer's own sheet: four Status distributed freely (whole numbers 0…90 — the same cap of 90 as a
+   Pokémon), Pokécoins and Pokébolas, one notes box, an optional picture for the sheet ({ id, pixel } in
+   media, like a ficha's) and the badge case (`badges`: which of the 8 Sinnoh badges, 0…7 — only the GM
+   gives them, through their own route, so saving the sheet never touches them). */
+const TRAINER_STATS = ['for', 'int', 'des', 'car'];
+const BADGE_COUNT = 8;
+function cleanBadges(x) {
+  return [...new Set((Array.isArray(x) ? x : []).map(n => parseInt(n, 10)).filter(n => n >= 0 && n < BADGE_COUNT))].sort((a, b) => a - b);
+}
+const clampInt = (v, max) => Math.max(0, Math.min(max, parseInt(v, 10) || 0));
 function parseSheet(text) {
   if (!text) return null;
   try { return typeof text === 'string' ? JSON.parse(text) : text; } catch (e) { return null; }
@@ -559,8 +566,9 @@ function sheetText(sheet) { return sheet ? JSON.stringify(sheet) : ''; }
 function cleanTrainerSheet(x) {
   const src = x && typeof x === 'object' && !Array.isArray(x) ? x : {};
   const stats = {};
-  TRAINER_STATS.forEach(k => { stats[k] = Math.max(0, Math.min(90, parseInt((src.stats || {})[k], 10) || 0)); });
-  return { stats, notes: String(src.notes || '').slice(0, 8000), art: cleanCustomArt(src.art) };
+  TRAINER_STATS.forEach(k => { stats[k] = clampInt((src.stats || {})[k], 90); });
+  return { stats, coins: clampInt(src.coins, 99999999), balls: clampInt(src.balls, 9999),
+    notes: String(src.notes || '').slice(0, 8000), art: cleanCustomArt(src.art), badges: cleanBadges(src.badges) };
 }
 
 function parseThemeLink(raw) {
@@ -751,10 +759,12 @@ const TERA_TYPES = ['Normal', 'Fogo', 'Água', 'Grama', 'Elétrico', 'Gelo', 'Lu
 async function trainerInfo(roomId) {
   const info = {};
   // `art`: the trainer sheet's picture (high resolution), for the end-of-battle art's portrait;
-  // `stats`: its Status, for the public profile (clicking a trainer's icon). The notes stay private.
+  // `stats` and `badges`: for the public profile (clicking a trainer's icon). Notes, Pokécoins and
+  // Pokébolas stay private.
   uniqueMembers(await store.listMembers(roomId)).forEach(x => {
     info[x.name] = { name: x.character || x.name, avatar: x.avatar, theme: x.theme || null,
-      art: (x.sheet && x.sheet.art) || null, stats: (x.sheet && x.sheet.stats) || null };
+      art: (x.sheet && x.sheet.art) || null, stats: (x.sheet && x.sheet.stats) || null,
+      badges: x.sheet ? cleanBadges(x.sheet.badges) : [] };
   });
   (await store.listNpcs(roomId)).forEach(n => { info[npcOwner(n.id)] = { name: n.name, avatar: n.avatar || '', theme: n.theme || null }; });
   return info;
@@ -1472,6 +1482,7 @@ async function saveTrainerSheet(req, res, name) {
   const member = uniqueMembers(await store.listMembers(m.roomId)).find(x => x.name === name);
   if (!member) return res.status(404).json({ error: 'jogador_nao_encontrado' });
   const sheet = cleanTrainerSheet(req.body.sheet);
+  sheet.badges = cleanBadges(member.sheet && member.sheet.badges);   // badges only through their own route
   const before = member.sheet && member.sheet.art ? member.sheet.art.id : null;
   if (sheet.art && sheet.art.id !== before) {
     const f = await store.getMediaInfo(sheet.art.id);
@@ -1490,6 +1501,20 @@ app.put('/api/members/:name/sheet', auth, async (req, res) => {
   try {
     if (!isGM(req.member)) return res.status(403).json({ error: 'so_mestre' });
     await saveTrainerSheet(req, res, String(req.params.name || ''));
+  } catch (e) { console.error(e); res.status(500).json({ error: 'erro_interno' }); }
+});
+/* the badge case: only the GM puts a badge in or takes it out (any trainer of the room, their own too);
+   saved on its own, so it doesn't wait for — or get undone by — a "Salvar Ficha" */
+app.put('/api/members/:name/badges', auth, async (req, res) => {
+  try {
+    const m = req.member;
+    if (!isGM(m)) return res.status(403).json({ error: 'so_mestre' });
+    const name = String(req.params.name || '');
+    const member = uniqueMembers(await store.listMembers(m.roomId)).find(x => x.name === name);
+    if (!member) return res.status(404).json({ error: 'jogador_nao_encontrado' });
+    const sheet = { ...cleanTrainerSheet(member.sheet), badges: cleanBadges(req.body.badges) };
+    await store.setMemberSheet(m.roomId, name, sheet);
+    res.json({ ok: true, sheet });
   } catch (e) { console.error(e); res.status(500).json({ error: 'erro_interno' }); }
 });
 
