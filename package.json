@@ -4,7 +4,8 @@
   "description": "Deck builder e fichas do sistema de RPG Pokemon Gustavo",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "migrate-db": "node scripts/migrate-db.js"
   },
   "engines": {
     "node": ">=20"

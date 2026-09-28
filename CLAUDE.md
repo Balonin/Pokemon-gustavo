@@ -401,6 +401,21 @@ Com banco:
 DATABASE_URL=postgres://... npm start
 ```
 
+## Trocar de banco (Render → Neon, ou qualquer Postgres)
+
+Não precisa de `pg_dump`: `scripts/migrate-db.js` copia linha por linha usando o `pg` que já está
+aqui. O schema do destino é criado pelo próprio app, então a ordem é:
+
+1. `DATABASE_URL=<destino> npm start` uma vez, só pra criar as tabelas (espere "Storage: PostgreSQL")
+2. `FROM_URL=<origem> TO_URL=<destino> npm run migrate-db -- --check` — mostra as contagens dos dois
+   lados e quanto pesa a tabela `media`, sem escrever nada
+3. Sem o `--check`, copia. Copia na ordem das chaves estrangeiras, em lotes, com
+   `ON CONFLICT DO NOTHING` (rodar de novo não duplica), só as colunas que existem dos dois lados,
+   e no fim compara as contagens
+4. Trocar a `DATABASE_URL` do serviço no Render
+
+Os tokens (`members.token`, `user_sessions`) vão junto, então ninguém é deslogado pela mudança.
+
 ## Ideias ainda não implementadas
 
 - Status Conditions (Burn, Paralysis, Sleep, Poison, Freeze, Confusion...)
