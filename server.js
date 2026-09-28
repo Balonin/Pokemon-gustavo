@@ -72,6 +72,25 @@ if (DATABASE_URL) {
       ALTER TABLE npcs ADD COLUMN IF NOT EXISTS theme TEXT NOT NULL DEFAULT '';
       ALTER TABLE rooms ADD COLUMN IF NOT EXISTS banned TEXT NOT NULL DEFAULT '[]';
       ALTER TABLE members ADD COLUMN IF NOT EXISTS sheet TEXT NOT NULL DEFAULT '';
+      /* Accounts: a login and a password for the whole site. The account does not own fichas —
+         it is *bound* to a trainer of a room (members.user_id), and the ficha's owner goes on being
+         the trainer's name. So nothing already saved has to be migrated, and two campaigns that both
+         have a "Diogo" stay two different people. */
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        login TEXT NOT NULL,
+        login_key TEXT NOT NULL UNIQUE,
+        pass TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS user_sessions (
+        token TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON user_sessions(user_id);
+      ALTER TABLE members ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT '';
+      ALTER TABLE rooms ADD COLUMN IF NOT EXISTS claims TEXT NOT NULL DEFAULT '[]';
       CREATE TABLE IF NOT EXISTS media (
         id TEXT PRIMARY KEY,
         room_id TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
@@ -99,10 +118,11 @@ if (DATABASE_URL) {
       const r = await pool.query('SELECT * FROM rooms WHERE id = $1', [id]);
       if (!r.rows[0]) return null;
       const x = r.rows[0];
-      return { id: x.id, name: x.name, gmName: x.gm_name, gmToken: x.gm_token, banned: parseNameList(x.banned) };
+      return { id: x.id, name: x.name, gmName: x.gm_name, gmToken: x.gm_token, banned: parseNameList(x.banned), claims: parseClaims(x.claims) };
     },
     async renameRoom(id, name) { await pool.query('UPDATE rooms SET name = $2 WHERE id = $1', [id, name]); },
     async setRoomBanned(id, list) { await pool.query('UPDATE rooms SET banned = $2 WHERE id = $1', [id, JSON.stringify(list)]); },
+    async setRoomClaims(id, list) { await pool.query('UPDATE rooms SET claims = $2 WHERE id = $1', [id, JSON.stringify(list)]); },
     // every token (device) of that name in the room
     async removeMember(roomId, name) { await pool.query('DELETE FROM members WHERE room_id = $1 AND name = $2', [roomId, name]); },
     async deleteMediaOf(roomId, owner) { await pool.query('DELETE FROM media WHERE room_id = $1 AND owner = $2', [roomId, owner]); },
@@ -126,19 +146,56 @@ if (DATABASE_URL) {
     },
     async addMember(m) {
       await pool.query(
-        'INSERT INTO members (token, room_id, name, role, avatar, theme, char_name, sheet) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-        [m.token, m.roomId, m.name, m.role, m.avatar || '', themeText(m.theme), m.character || '', sheetText(m.sheet)]
+        'INSERT INTO members (token, room_id, name, role, user_id, avatar, theme, char_name, sheet) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+        [m.token, m.roomId, m.name, m.role, m.userId || '', m.avatar || '', themeText(m.theme), m.character || '', sheetText(m.sheet)]
       );
     },
     async getMember(token) {
       const r = await pool.query('SELECT * FROM members WHERE token = $1', [token]);
       if (!r.rows[0]) return null;
       const x = r.rows[0];
-      return { token: x.token, roomId: x.room_id, name: x.name, role: x.role, avatar: x.avatar || '', theme: parseTheme(x.theme), character: x.char_name || '', sheet: parseSheet(x.sheet) };
+      return { token: x.token, roomId: x.room_id, name: x.name, role: x.role, userId: x.user_id || '', avatar: x.avatar || '', theme: parseTheme(x.theme), character: x.char_name || '', sheet: parseSheet(x.sheet) };
     },
     async listMembers(roomId) {
-      const r = await pool.query('SELECT name, role, avatar, theme, char_name, sheet FROM members WHERE room_id = $1 ORDER BY created_at', [roomId]);
-      return r.rows.map(x => ({ name: x.name, role: x.role, avatar: x.avatar, theme: parseTheme(x.theme), character: x.char_name || '', sheet: parseSheet(x.sheet) }));
+      const r = await pool.query('SELECT name, role, user_id, avatar, theme, char_name, sheet FROM members WHERE room_id = $1 ORDER BY created_at', [roomId]);
+      return r.rows.map(x => ({ name: x.name, role: x.role, userId: x.user_id || '', avatar: x.avatar, theme: parseTheme(x.theme), character: x.char_name || '', sheet: parseSheet(x.sheet) }));
+    },
+    /* Accounts. The password is a scrypt hash; `login_key` is the login folded to lower case, so
+       "Diogo" and "diogo" are the same account. */
+    async createUser(u) {
+      await pool.query('INSERT INTO users (id, login, login_key, pass) VALUES ($1,$2,$3,$4)', [u.id, u.login, u.loginKey, u.pass]);
+    },
+    async getUser(id) {
+      const r = await pool.query('SELECT id, login, pass FROM users WHERE id = $1', [id]);
+      return r.rows[0] || null;
+    },
+    async getUserByLogin(loginKey) {
+      const r = await pool.query('SELECT id, login, pass FROM users WHERE login_key = $1', [loginKey]);
+      return r.rows[0] || null;
+    },
+    async setUserPass(id, pass) { await pool.query('UPDATE users SET pass = $2 WHERE id = $1', [id, pass]); },
+    async addSession(token, userId) { await pool.query('INSERT INTO user_sessions (token, user_id) VALUES ($1,$2)', [token, userId]); },
+    async getSession(token) {
+      const r = await pool.query('SELECT token, user_id FROM user_sessions WHERE token = $1', [token]);
+      return r.rows[0] ? { token: r.rows[0].token, userId: r.rows[0].user_id } : null;
+    },
+    async deleteSessionsOf(userId) { await pool.query('DELETE FROM user_sessions WHERE user_id = $1', [userId]); },
+    // binding an account to a trainer: every token (device) of that name in the room
+    async setMemberUser(roomId, name, userId) {
+      await pool.query('UPDATE members SET user_id = $3 WHERE room_id = $1 AND name = $2', [roomId, name, userId]);
+    },
+    // the trainer this account is in a given room (any of its tokens: they all share name and role)
+    async memberOfUser(roomId, userId) {
+      const r = await pool.query('SELECT name, role FROM members WHERE room_id = $1 AND user_id = $2 LIMIT 1', [roomId, userId]);
+      return r.rows[0] || null;
+    },
+    // every campaign this account plays in, for the lobby's list
+    async roomsOfUser(userId) {
+      const r = await pool.query(
+        `SELECT DISTINCT ON (m.room_id) m.room_id, m.name, m.role, m.char_name, r.name AS room_name
+           FROM members m JOIN rooms r ON r.id = m.room_id
+          WHERE m.user_id = $1 ORDER BY m.room_id, m.created_at`, [userId]);
+      return r.rows.map(x => ({ roomId: x.room_id, roomName: x.room_name, name: x.name, role: x.role, character: x.char_name || '' }));
     },
     // the trainer's own sheet (Status and notes), kept on every token of the name like the avatar
     async setMemberSheet(roomId, name, sheet) {
@@ -248,12 +305,13 @@ if (DATABASE_URL) {
   };
   console.log('Storage: PostgreSQL');
 } else {
-  const mem = { rooms: {}, members: {}, pokemon: {}, teams: {}, npcs: {}, battles: {}, media: {} };
+  const mem = { rooms: {}, members: {}, pokemon: {}, teams: {}, npcs: {}, battles: {}, media: {}, users: {}, sessions: {} };
   store = {
     async createRoom(room) { mem.rooms[room.id] = room; },
     async getRoom(id) { return mem.rooms[id] || null; },
     async renameRoom(id, name) { if (mem.rooms[id]) mem.rooms[id].name = name; },
     async setRoomBanned(id, list) { if (mem.rooms[id]) mem.rooms[id].banned = [...list]; },
+    async setRoomClaims(id, list) { if (mem.rooms[id]) mem.rooms[id].claims = [...list]; },
     async removeMember(roomId, name) {
       Object.entries(mem.members).forEach(([t, x]) => { if (x.roomId === roomId && x.name === name) delete mem.members[t]; });
     },
@@ -266,11 +324,11 @@ if (DATABASE_URL) {
       });
       delete mem.rooms[id];
     },
-    async addMember(m) { mem.members[m.token] = { avatar: '', theme: null, character: '', sheet: null, ...m }; },
+    async addMember(m) { mem.members[m.token] = { avatar: '', theme: null, character: '', sheet: null, userId: '', ...m }; },
     async getMember(token) { return mem.members[token] || null; },
     async listMembers(roomId) {
       return Object.values(mem.members).filter(m => m.roomId === roomId)
-        .map(m => ({ name: m.name, role: m.role, avatar: m.avatar || '', theme: m.theme || null, character: m.character || '', sheet: m.sheet || null }));
+        .map(m => ({ name: m.name, role: m.role, userId: m.userId || '', avatar: m.avatar || '', theme: m.theme || null, character: m.character || '', sheet: m.sheet || null }));
     },
     async setMemberSheet(roomId, name, sheet) {
       Object.values(mem.members).forEach(m => { if (m.roomId === roomId && m.name === name) m.sheet = sheet; });
@@ -283,6 +341,31 @@ if (DATABASE_URL) {
     },
     async setMemberCharacter(roomId, name, character) {
       Object.values(mem.members).forEach(m => { if (m.roomId === roomId && m.name === name) m.character = character; });
+    },
+    async createUser(u) { mem.users[u.id] = { ...u }; },
+    async getUser(id) { return mem.users[id] || null; },
+    async getUserByLogin(loginKey) { return Object.values(mem.users).find(u => u.loginKey === loginKey) || null; },
+    async setUserPass(id, pass) { if (mem.users[id]) mem.users[id].pass = pass; },
+    async addSession(token, userId) { mem.sessions[token] = { token, userId }; },
+    async getSession(token) { return mem.sessions[token] || null; },
+    async deleteSessionsOf(userId) {
+      Object.entries(mem.sessions).forEach(([t, s]) => { if (s.userId === userId) delete mem.sessions[t]; });
+    },
+    async setMemberUser(roomId, name, userId) {
+      Object.values(mem.members).forEach(m => { if (m.roomId === roomId && m.name === name) m.userId = userId; });
+    },
+    async memberOfUser(roomId, userId) {
+      const m = Object.values(mem.members).find(x => x.roomId === roomId && x.userId === userId);
+      return m ? { name: m.name, role: m.role } : null;
+    },
+    async roomsOfUser(userId) {
+      const out = new Map();
+      Object.values(mem.members).forEach(m => {
+        if (m.userId !== userId || out.has(m.roomId)) return;
+        const r = mem.rooms[m.roomId];
+        if (r) out.set(m.roomId, { roomId: m.roomId, roomName: r.name, name: m.name, role: m.role, character: m.character || '' });
+      });
+      return [...out.values()];
     },
     async listNpcs(roomId) {
       return Object.values(mem.npcs).filter(n => n.roomId === roomId)
@@ -338,6 +421,13 @@ if (DATABASE_URL) {
 function parseNameList(s) {
   try { const v = JSON.parse(s || '[]'); return Array.isArray(v) ? v.map(String) : []; } catch (e) { return []; }
 }
+/* Pending claims on a trainer with no account yet (see /api/rooms/:id/join): the GM approves them. */
+function parseClaims(s) {
+  try {
+    const v = JSON.parse(s || '[]');
+    return Array.isArray(v) ? v.filter(c => c && typeof c === 'object' && c.id && c.name && c.userId) : [];
+  } catch (e) { return []; }
+}
 // a blocked name is refused ignoring case ("Diogo" also blocks "diogo")
 const isBlocked = (room, name) => (room.banned || []).some(b => b.toLowerCase() === name.toLowerCase());
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -349,6 +439,65 @@ function roomCode(n = 6) {
 }
 function token() { return crypto.randomBytes(24).toString('hex'); }
 function uid() { return crypto.randomBytes(10).toString('hex'); }
+
+/* ------------------------------------------------------------------ */
+/* Accounts: one login and password for the whole site.                 */
+/* The account is not the owner of anything — it is bound to a trainer  */
+/* of a room (members.user_id), and the trainer's name goes on being    */
+/* the ficha's `owner`. So the login can be added to a campaign that is */
+/* already running without a single ficha changing hands.               */
+/* ------------------------------------------------------------------ */
+const PASS_MIN = 4;
+const scrypt = (pw, salt) => new Promise((ok, no) =>
+  crypto.scrypt(pw, salt, 32, (e, buf) => (e ? no(e) : ok(buf))));
+async function hashPass(pw) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  return `s1$${salt}$${(await scrypt(pw, salt)).toString('hex')}`;
+}
+async function checkPass(pw, stored) {
+  const [v, salt, hex] = String(stored || '').split('$');
+  if (v !== 's1' || !salt || !hex) return false;
+  const a = Buffer.from(hex, 'hex'), b = await scrypt(pw, salt);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+/* the login is a name like any other (accents included); folded to lower case it must be unique */
+function cleanLogin(raw) {
+  const login = String(raw || '').replace(/\s+/g, ' ').trim().slice(0, 24);
+  if (login.length < 2 || !/^[\p{L}\p{N} ._-]+$/u.test(login)) return '';
+  if (login.toLowerCase().startsWith(NPC_PREFIX)) return '';
+  return login;
+}
+const loginKeyOf = login => login.toLowerCase();
+const cleanPass = raw => (typeof raw === 'string' && raw.length >= PASS_MIN && raw.length <= 200 ? raw : '');
+
+/* A wrong password costs time: after 5 misses that login waits half a minute. Kept in memory —
+   a restart forgives everyone, which is fine for a table of friends. */
+const tries = new Map();
+function throttled(key) {
+  const t = tries.get(key);
+  return !!(t && t.n >= 5 && Date.now() - t.at < 30000);
+}
+function missed(key) {
+  const t = tries.get(key) || { n: 0, at: 0 };
+  tries.set(key, { n: (Date.now() - t.at < 30000 ? t.n : 0) + 1, at: Date.now() });
+}
+const forgiven = key => tries.delete(key);
+
+async function newSession(userId) {
+  const t = token();
+  await store.addSession(t, userId);
+  return t;
+}
+// the lobby's routes (register, login, create/enter a room) travel on the account token
+async function accountAuth(req, res, next) {
+  const t = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  if (!t) return res.status(401).json({ error: 'sem_conta' });
+  const s = await store.getSession(t);
+  const u = s && await store.getUser(s.userId);
+  if (!u) return res.status(401).json({ error: 'conta_invalida' });
+  req.user = { id: u.id, login: u.login };
+  next();
+}
 
 async function auth(req, res, next) {
   const t = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
@@ -486,8 +635,9 @@ function uniqueMembers(rows) {
   const byName = new Map();
   rows.forEach(r => {
     const cur = byName.get(r.name);
-    if (!cur) { byName.set(r.name, { name: r.name, role: r.role, avatar: r.avatar || '', theme: r.theme || null, character: r.character || '', sheet: r.sheet || null }); return; }
+    if (!cur) { byName.set(r.name, { name: r.name, role: r.role, userId: r.userId || '', avatar: r.avatar || '', theme: r.theme || null, character: r.character || '', sheet: r.sheet || null }); return; }
     if (r.role === 'gm') cur.role = 'gm';
+    if (!cur.userId && r.userId) cur.userId = r.userId;
     if (!cur.sheet && r.sheet) cur.sheet = r.sheet;
     if (!cur.avatar && r.avatar) cur.avatar = r.avatar;
     if (!cur.theme && r.theme) cur.theme = r.theme;
@@ -946,38 +1096,195 @@ function cleanTeamData(body) {
 /* ------------------------------------------------------------------ */
 /* Rooms                                                               */
 /* ------------------------------------------------------------------ */
-app.post('/api/rooms', async (req, res) => {
+/* ------------------------------------------------------------------ */
+/* Account: register, log in, the campaigns it plays in                 */
+/* ------------------------------------------------------------------ */
+app.post('/api/account/register', async (req, res) => {
   try {
-    const name = String(req.body.name || '').trim().slice(0, 80);
-    const gmName = cleanTrainerName(req.body.gmName);
-    if (!gmName) return res.status(400).json({ error: 'nome_obrigatorio' });
-
-    let id = roomCode();
-    for (let i = 0; i < 5 && await store.getRoom(id); i++) id = roomCode();
-
-    const gmToken = token();
-    await store.createRoom({ id, name: name || ('Sala de ' + gmName), gmName, gmToken });
-    await store.addMember({ token: gmToken, roomId: id, name: gmName, role: 'gm' });
-    res.json({ roomId: id, name: name || ('Sala de ' + gmName), token: gmToken, role: 'gm', name_: gmName });
+    const login = cleanLogin(req.body.login);
+    const pass = cleanPass(req.body.pass);
+    if (!login) return res.status(400).json({ error: 'login_invalido' });
+    if (!pass) return res.status(400).json({ error: 'senha_curta' });
+    const key = loginKeyOf(login);
+    if (await store.getUserByLogin(key)) return res.status(409).json({ error: 'login_em_uso' });
+    const id = uid();
+    await store.createUser({ id, login, loginKey: key, pass: await hashPass(pass) });
+    res.json({ token: await newSession(id), login });
   } catch (e) {
     console.error(e); res.status(500).json({ error: 'erro_interno' });
   }
 });
 
-app.post('/api/rooms/:id/join', async (req, res) => {
+app.post('/api/account/login', async (req, res) => {
+  try {
+    const login = cleanLogin(req.body.login);
+    if (!login) return res.status(400).json({ error: 'login_invalido' });
+    const key = loginKeyOf(login);
+    if (throttled(key)) return res.status(429).json({ error: 'muitas_tentativas' });
+    const u = await store.getUserByLogin(key);
+    if (!u || !await checkPass(String(req.body.pass || ''), u.pass)) {
+      missed(key);
+      return res.status(401).json({ error: 'login_ou_senha' });
+    }
+    forgiven(key);
+    res.json({ token: await newSession(u.id), login: u.login });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'erro_interno' });
+  }
+});
+
+/* the campaigns this account is bound to, for the lobby's list (works on any device) */
+app.get('/api/account/rooms', accountAuth, async (req, res) => {
+  try {
+    res.json({ login: req.user.login, rooms: await store.roomsOfUser(req.user.id) });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'erro_interno' });
+  }
+});
+
+/* changing the password signs every device out, this one included: it is also how you cut off
+   a device you lost. The client gets a fresh token back. */
+app.put('/api/account/password', accountAuth, async (req, res) => {
+  try {
+    const next = cleanPass(req.body.next);
+    if (!next) return res.status(400).json({ error: 'senha_curta' });
+    const u = await store.getUser(req.user.id);
+    if (!await checkPass(String(req.body.current || ''), u.pass)) return res.status(403).json({ error: 'senha_atual_errada' });
+    await store.setUserPass(u.id, await hashPass(next));
+    await store.deleteSessionsOf(u.id);
+    res.json({ ok: true, token: await newSession(u.id) });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'erro_interno' });
+  }
+});
+
+/* An account is bound to a trainer who has none yet, proving who it is with the room token it
+   already holds — this is how a campaign from before the login existed gets accounts without
+   anybody losing a ficha: you are already inside, so you are already yourself. */
+app.post('/api/me/link', auth, async (req, res) => {
+  try {
+    const m = req.member;
+    if (m.userId) return res.status(400).json({ error: 'ja_vinculado' });
+    const login = cleanLogin(req.body.login);
+    const pass = cleanPass(req.body.pass);
+    if (!login) return res.status(400).json({ error: 'login_invalido' });
+    if (!pass) return res.status(400).json({ error: 'senha_curta' });
+    const key = loginKeyOf(login);
+    let u = await store.getUserByLogin(key);
+    if (u) {   // an account of yours from another campaign: the password has to check out
+      if (throttled(key)) return res.status(429).json({ error: 'muitas_tentativas' });
+      if (!await checkPass(pass, u.pass)) { missed(key); return res.status(401).json({ error: 'login_ou_senha' }); }
+      forgiven(key);
+      if (await store.memberOfUser(m.roomId, u.id)) return res.status(409).json({ error: 'conta_ja_na_sala' });
+    } else {
+      const id = uid();
+      await store.createUser({ id, login, loginKey: key, pass: await hashPass(pass) });
+      u = { id, login };
+    }
+    await store.setMemberUser(m.roomId, m.name, u.id);
+    res.json({ ok: true, login: u.login, token: await newSession(u.id) });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'erro_interno' });
+  }
+});
+
+app.post('/api/rooms', accountAuth, async (req, res) => {
+  try {
+    const name = String(req.body.name || '').trim().slice(0, 80);
+    const gmName = req.user.login;
+
+    let id = roomCode();
+    for (let i = 0; i < 5 && await store.getRoom(id); i++) id = roomCode();
+
+    const gmToken = token();
+    await store.createRoom({ id, name: name || ('Sala de ' + gmName), gmName, gmToken, banned: [], claims: [] });
+    await store.addMember({ token: gmToken, roomId: id, name: gmName, role: 'gm', userId: req.user.id });
+    res.json({ roomId: id, name: name || ('Sala de ' + gmName), token: gmToken, role: 'gm', trainer: gmName });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'erro_interno' });
+  }
+});
+
+/* Entering a campaign, always as a logged-in account. Three ways in:
+   - the account already plays here → a new token for the trainer it is bound to (any device, same trainer);
+   - the trainer name is free → it is created, bound to the account;
+   - the name is a trainer from before the login existed (no account) → a claim the GM has to approve,
+     so nobody walks in under someone else's name and takes their fichas.
+   A name already bound to another account is simply refused. */
+app.post('/api/rooms/:id/join', accountAuth, async (req, res) => {
   try {
     const roomId = String(req.params.id || '').toUpperCase();
-    const name = cleanTrainerName(req.body.name);
-    if (!name) return res.status(400).json({ error: 'nome_obrigatorio' });
     const room = await store.getRoom(roomId);
     if (!room) return res.status(404).json({ error: 'sala_nao_encontrada' });
-    if (isBlocked(room, name)) return res.status(403).json({ error: 'nome_bloqueado' });
-    // rejoining under the same name (new device) keeps the avatar and theme already chosen
-    const same = uniqueMembers(await store.listMembers(roomId)).find(x => x.name === name);
-    const avatar = same ? same.avatar : '';
+    const members = uniqueMembers(await store.listMembers(roomId));
+
+    const mine = members.find(x => x.userId === req.user.id);
+    if (mine) {
+      if (isBlocked(room, mine.name)) return res.status(403).json({ error: 'nome_bloqueado' });
+      const t = token();
+      await store.addMember({ token: t, roomId, name: mine.name, role: mine.role, userId: req.user.id,
+        avatar: mine.avatar, theme: mine.theme, character: mine.character, sheet: mine.sheet });
+      return res.json({ roomId, name: room.name, token: t, role: mine.role, trainer: mine.name, avatar: mine.avatar });
+    }
+
+    const wanted = cleanTrainerName(req.body.name) || req.user.login;
+    if (!wanted) return res.status(400).json({ error: 'nome_obrigatorio' });
+    if (isBlocked(room, wanted) || isBlocked(room, req.user.login)) return res.status(403).json({ error: 'nome_bloqueado' });
+    const taken = members.find(x => x.name === wanted);
+    if (taken && taken.userId) return res.status(409).json({ error: 'nome_em_uso' });
+    if (taken) {
+      const claims = room.claims || [];
+      if (!claims.some(c => c.userId === req.user.id && c.name === wanted)) {
+        await store.setRoomClaims(roomId, [...claims.filter(c => c.userId !== req.user.id),
+          { id: uid(), userId: req.user.id, login: req.user.login, name: wanted, at: new Date().toISOString() }]);
+      }
+      return res.status(202).json({ pending: true, name: wanted, roomName: room.name });
+    }
     const t = token();
-    await store.addMember({ token: t, roomId, name, role: 'player', avatar, theme: same ? same.theme : null, character: same ? same.character : '', sheet: same ? same.sheet : null });
-    res.json({ roomId, name: room.name, token: t, role: 'player', avatar });
+    await store.addMember({ token: t, roomId, name: wanted, role: 'player', userId: req.user.id });
+    res.json({ roomId, name: room.name, token: t, role: 'player', trainer: wanted, avatar: '' });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'erro_interno' });
+  }
+});
+
+/* The GM answers a claim: approving binds that account to the trainer (fichas and all), refusing
+   just drops it. Either way the person tries "Entrar" again and the room lets them in — or doesn't. */
+app.post('/api/claims/:cid', auth, async (req, res) => {
+  try {
+    const m = req.member;
+    if (!isGM(m)) return res.status(403).json({ error: 'so_mestre' });
+    const room = await store.getRoom(m.roomId);
+    const claims = (room.claims || []);
+    const claim = claims.find(c => c.id === String(req.params.cid || ''));
+    if (!claim) return res.status(404).json({ error: 'pedido_nao_encontrado' });
+    if (req.body.approve) {
+      const members = uniqueMembers(await store.listMembers(m.roomId));
+      const target = members.find(x => x.name === claim.name);
+      if (!target) return res.status(404).json({ error: 'jogador_nao_encontrado' });
+      if (target.userId) return res.status(409).json({ error: 'nome_em_uso' });
+      if (await store.memberOfUser(m.roomId, claim.userId)) return res.status(409).json({ error: 'conta_ja_na_sala' });
+      await store.setMemberUser(m.roomId, claim.name, claim.userId);
+    }
+    await store.setRoomClaims(m.roomId, claims.filter(c => c.id !== claim.id));
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'erro_interno' });
+  }
+});
+
+/* Recovery: the GM unbinds a trainer from its account (someone lost the login), so it can be
+   claimed again. The tokens already out keep working — use "Expulsar" to cut those off. */
+app.delete('/api/members/:name/account', auth, async (req, res) => {
+  try {
+    const m = req.member;
+    if (!isGM(m)) return res.status(403).json({ error: 'so_mestre' });
+    const name = String(req.params.name || '');
+    const member = uniqueMembers(await store.listMembers(m.roomId)).find(x => x.name === name);
+    if (!member) return res.status(404).json({ error: 'jogador_nao_encontrado' });
+    if (name === m.name) return res.status(400).json({ error: 'conta_propria' });
+    await store.setMemberUser(m.roomId, name, '');
+    res.json({ ok: true });
   } catch (e) {
     console.error(e); res.status(500).json({ error: 'erro_interno' });
   }
@@ -1038,10 +1345,11 @@ app.delete('/api/members/:name', auth, async (req, res) => {
     }
     if (member.sheet && member.sheet.art) await store.deleteMedia(member.sheet.art.id);   // and so does the trainer sheet
     await store.removeMember(m.roomId, name);
-    if (body.block) {
-      const room = await store.getRoom(m.roomId);
-      if (!isBlocked(room, name)) await store.setRoomBanned(m.roomId, [...(room.banned || []), name]);
+    const room = await store.getRoom(m.roomId);
+    if ((room.claims || []).some(c => c.name === name)) {
+      await store.setRoomClaims(m.roomId, room.claims.filter(c => c.name !== name));
     }
+    if (body.block && !isBlocked(room, name)) await store.setRoomBanned(m.roomId, [...(room.banned || []), name]);
     res.json({ ok: true });
   } catch (e) {
     console.error(e); res.status(500).json({ error: 'erro_interno' });
@@ -1059,6 +1367,17 @@ app.delete('/api/room/banned/:name', auth, async (req, res) => {
     console.error(e); res.status(500).json({ error: 'erro_interno' });
   }
 });
+
+async function loginOfUser(userId) {
+  const u = userId && await store.getUser(userId);
+  return u ? u.login : '';
+}
+// members with `account` (the login bound to each) in place of the raw id; never their password
+async function withLogins(members) {
+  const logins = new Map();
+  for (const x of members) if (x.userId && !logins.has(x.userId)) logins.set(x.userId, await loginOfUser(x.userId));
+  return members.map(({ userId, ...x }) => ({ ...x, account: logins.get(userId) || '' }));
+}
 
 app.get('/api/state', auth, async (req, res) => {
   try {
@@ -1078,11 +1397,15 @@ app.get('/api/state', auth, async (req, res) => {
       battles = battles.map(b => (SIDES.some(s => b.sides[s].owner === m.name)
         ? playerBattleView(b, m.name, roomMons, info) : spectatorBattleView(b, roomMons, info)));
     }
-    const members = isGM(m) ? uniqueMembers(await store.listMembers(m.roomId)) : [];
+    // the GM sees which trainers already have an account behind them (`account`: the login), so a
+    // trainer still without one stands out and can be unbound for recovery
+    const members = isGM(m) ? await withLogins(uniqueMembers(await store.listMembers(m.roomId))) : [];
     const npcs = isGM(m) ? await store.listNpcs(m.roomId) : [];
     res.json({
-      room: { id: room.id, name: room.name, gmName: room.gmName, ...(isGM(m) ? { banned: room.banned || [] } : {}) },
-      me: { name: m.name, role: m.role, avatar: m.avatar || '', theme: m.theme || null, character: m.character || '', sheet: m.sheet || null },
+      room: { id: room.id, name: room.name, gmName: room.gmName,
+        ...(isGM(m) ? { banned: room.banned || [], claims: (room.claims || []).map(c => ({ id: c.id, login: c.login, name: c.name })) } : {}) },
+      me: { name: m.name, role: m.role, account: m.userId ? await loginOfUser(m.userId) : '',
+        avatar: m.avatar || '', theme: m.theme || null, character: m.character || '', sheet: m.sheet || null },
       members, npcs, pokemon, teams, battles
     });
   } catch (e) {

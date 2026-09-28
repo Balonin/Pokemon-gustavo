@@ -905,6 +905,12 @@ body.in-room { max-width: none; padding: 12px; }
 .rm-banned { margin-top: 16px; }
 .rm-banned-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-bottom: 1px dashed var(--panel-hi); }
 .rm-banned-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-input); font-size: 0.9rem; }
+.ac-who { font-family: var(--font-pixel); font-size: 0.7rem; color: #fff; }
+.ac-hint { font-family: var(--font-body); font-size: 0.72rem; color: var(--ink-soft); text-transform: none; letter-spacing: 0; }
+/* pending claims on a trainer with no account: the GM approves or refuses each one */
+.rm-claim { padding: 7px 0; border-bottom: 1px dashed var(--panel-hi); font-family: var(--font-body); font-size: 0.8rem; color: var(--ink); }
+.rm-claim b { color: #fff; }
+.rm-claim .top-actions { margin: 6px 0 0; }
 label.chk { display: flex; align-items: flex-start; gap: 9px; margin: 10px 0 0; cursor: pointer; font-family: var(--font-body); font-size: 0.78rem; line-height: 1.5; color: var(--ink); }
 label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; padding: 0; accent-color: var(--gold); cursor: pointer; }
 .kk-who { margin: 8px 0 4px; font-family: var(--font-pixel); font-size: 0.66rem; color: #fff; }
@@ -967,31 +973,58 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
   <div class="sub">Crie uma sala como Mestre, ou entre numa sala existente como Jogador.</div>
 
   <div class="card">
-    <label>Seu nome</label>
-    <input id="lobbyName" placeholder="ex: Diogo" autocomplete="off">
+    <div id="accountOut">
+      <h3 id="acTitle">Entrar na sua conta</h3>
+      <div class="sub" style="margin-bottom:10px;" id="acIntro">Sua conta vale pro site inteiro: com ela você entra em qualquer campanha, de qualquer aparelho.</div>
+      <div class="lobby-cols">
+        <div>
+          <label for="acLogin">Login</label>
+          <input id="acLogin" placeholder="ex: Diogo" autocomplete="username" maxlength="24">
+        </div>
+        <div>
+          <label for="acPass">Senha</label>
+          <input id="acPass" type="password" placeholder="mínimo 4 caracteres" autocomplete="current-password">
+        </div>
+      </div>
+      <div class="top-actions" style="margin-top:12px;">
+        <button class="btn" id="acSubmitBtn">Entrar</button>
+        <button class="btn secondary small" id="acToggleBtn">Criar uma conta</button>
+      </div>
+    </div>
+    <div id="accountIn" hidden>
+      <div class="ac-who">Conectado como <b id="acWho"></b></div>
+      <div class="top-actions" style="margin-top:10px;">
+        <button class="btn secondary small" id="acPassBtn">Trocar senha</button>
+        <button class="btn secondary small" id="acLogoutBtn">Sair da conta</button>
+      </div>
+    </div>
     <div id="lobbyStatus" class="status-line" style="margin-top:8px;">conectando...</div>
   </div>
 
-  <div class="lobby-cols">
-    <div class="card">
-      <h3>Sou Mestre</h3>
-      <div class="sub" style="margin-bottom:10px;">Crie uma sala nova e convide seus jogadores.</div>
-      <label>Nome da campanha</label>
-      <input id="newRoomName" placeholder="ex: Rivais do Spankers">
-      <div class="top-actions" style="margin-top:12px;"><button class="btn" id="createRoomBtn">Criar Sala</button></div>
+  <div id="lobbyRooms" hidden>
+    <div class="lobby-cols">
+      <div class="card">
+        <h3>Sou Mestre</h3>
+        <div class="sub" style="margin-bottom:10px;">Crie uma sala nova e convide seus jogadores.</div>
+        <label>Nome da campanha</label>
+        <input id="newRoomName" placeholder="ex: Rivais do Spankers">
+        <div class="top-actions" style="margin-top:12px;"><button class="btn" id="createRoomBtn">Criar Sala</button></div>
+      </div>
+      <div class="card">
+        <h3>Sou Jogador</h3>
+        <div class="sub" style="margin-bottom:10px;">Entre com o código que o Mestre te passou.</div>
+        <label>Código da sala</label>
+        <input id="joinCode" placeholder="ex: A1B2C3" autocomplete="off" style="text-transform:uppercase;">
+        <label for="joinTrainer" style="margin-top:10px;">Seu nome na campanha <span class="ac-hint">(opcional)</span></label>
+        <input id="joinTrainer" placeholder="deixe vazio pra usar seu login" autocomplete="off" maxlength="40">
+        <div class="top-actions" style="margin-top:12px;"><button class="btn" id="joinRoomBtn">Entrar</button></div>
+      </div>
     </div>
-    <div class="card">
-      <h3>Sou Jogador</h3>
-      <div class="sub" style="margin-bottom:10px;">Entre com o código que o Mestre te passou.</div>
-      <label>Código da sala</label>
-      <input id="joinCode" placeholder="ex: A1B2C3" autocomplete="off" style="text-transform:uppercase;">
-      <div class="top-actions" style="margin-top:12px;"><button class="btn" id="joinRoomBtn">Entrar</button></div>
-    </div>
-  </div>
 
-  <div class="card" id="recentRooms" style="display:none;">
-    <h3>Voltar para</h3>
-    <div id="recentRoomsList"></div>
+    <div class="card" id="recentRooms" style="display:none;">
+      <h3>Minhas campanhas</h3>
+      <div id="recentRoomsList"></div>
+    </div>
   </div>
 </div>
 
@@ -1150,6 +1183,7 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
   <div class="card modal" role="dialog" aria-modal="true" aria-labelledby="avTitle">
     <h2 id="avTitle">Sua caracterização</h2>
     <div class="sub" id="avIntro" style="margin:10px 0 0;"></div>
+    <div class="rm-claim" id="avAccount" hidden style="border:0;"></div>
     <div id="avNameRow">
       <label for="avName" id="avNameLabel">Nome do NPC</label>
       <input id="avName" maxlength="40" placeholder="ex: Líder Brock" autocomplete="off">
@@ -1262,6 +1296,7 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
       <input id="rmName" maxlength="80" autocomplete="off">
       <button class="btn small" id="rmSaveBtn">Salvar</button>
     </div>
+    <div class="rm-banned" id="rmClaims" hidden></div>
     <div class="rm-banned" id="rmBanned" hidden></div>
     <div class="rm-danger">
       <div class="rm-danger-t">Excluir campanha</div>
@@ -1272,6 +1307,48 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
     </div>
     <div class="top-actions" style="margin:14px 0 0;">
       <button class="btn secondary small" id="rmCloseBtn">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CREATE THE ACCOUNT OF A TRAINER FROM BEFORE THE LOGIN EXISTED ===== -->
+<div class="modal-backdrop" id="linkModal" hidden>
+  <div class="card modal" role="dialog" aria-modal="true" aria-labelledby="lkTitle">
+    <h2 id="lkTitle">🔑 Crie sua conta</h2>
+    <div class="sub" style="margin:10px 0 0;">
+      Esta campanha é de antes do login existir, e você já está dentro dela — então é você mesmo.
+      Escolha um login e uma senha: <b id="lkWho"></b> continua sendo seu, com todas as fichas,
+      e a partir de agora você entra de qualquer aparelho. Se já tem conta de outra campanha, use a mesma.
+    </div>
+    <div class="lobby-cols" style="margin-top:12px;">
+      <div>
+        <label for="lkLogin">Login</label>
+        <input id="lkLogin" autocomplete="username" maxlength="24">
+      </div>
+      <div>
+        <label for="lkPass">Senha</label>
+        <input id="lkPass" type="password" placeholder="mínimo 4 caracteres" autocomplete="new-password">
+      </div>
+    </div>
+    <div class="top-actions" style="margin:14px 0 0;">
+      <button class="btn" id="lkSaveBtn">Criar conta</button>
+      <button class="btn secondary small" id="lkLaterBtn">Agora não</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== CHANGE THE ACCOUNT PASSWORD ===== -->
+<div class="modal-backdrop" id="passModal" hidden>
+  <div class="card modal" role="dialog" aria-modal="true" aria-labelledby="pwTitle">
+    <h2 id="pwTitle">Trocar senha</h2>
+    <div class="sub" style="margin:10px 0 0;">Trocar a senha desconecta a conta em todos os aparelhos.</div>
+    <label for="pwCurrent" style="margin-top:12px;">Senha atual</label>
+    <input id="pwCurrent" type="password" autocomplete="current-password">
+    <label for="pwNext">Senha nova</label>
+    <input id="pwNext" type="password" placeholder="mínimo 4 caracteres" autocomplete="new-password">
+    <div class="top-actions" style="margin:14px 0 0;">
+      <button class="btn" id="pwSaveBtn">Salvar</button>
+      <button class="btn secondary small" id="pwCancelBtn">Cancelar</button>
     </div>
   </div>
 </div>
@@ -1711,6 +1788,20 @@ let session = null;       // {roomId, role:'gm'|'player', name, gmKey}
 let currentRoom = null;   // room doc data
 let selectedMonId = null;
 
+/* The account: one login and password for the whole site, kept apart from the room sessions.
+   It doesn't own the fichas — it is bound to your trainer in each campaign (the ficha's `owner`
+   goes on being the trainer's name), so a campaign that started before the login keeps everything. */
+let account = null;       // { token, login }
+let myRooms = [];         // the campaigns of this account, straight from the server
+function loadAccount() {
+  try { return JSON.parse(localStorage.getItem('gustavo_account') || 'null'); } catch(e) { return null; }
+}
+function saveAccount(a) {
+  account = a;
+  if (a) localStorage.setItem('gustavo_account', JSON.stringify(a));
+  else localStorage.removeItem('gustavo_account');
+}
+
 function loadSessions() {
   try { return JSON.parse(localStorage.getItem('gustavo_sessions') || '[]'); } catch(e) { return []; }
 }
@@ -1758,7 +1849,7 @@ function roomTrainers() {
   allMembers.forEach(mb => {
     if (seen.has(mb.name)) return;
     seen.add(mb.name);
-    list.push({ key: mb.name, name: mb.character || mb.name, kind: mb.role === 'gm' ? 'gm' : 'player', avatar: mb.avatar, theme: mb.theme || null, art: (mb.sheet && mb.sheet.art) || null });
+    list.push({ key: mb.name, name: mb.character || mb.name, kind: mb.role === 'gm' ? 'gm' : 'player', avatar: mb.avatar, theme: mb.theme || null, art: (mb.sheet && mb.sheet.art) || null, account: mb.account || '' });
   });
   allMons.forEach(m => {
     if (!m.owner || seen.has(m.owner)) return;
@@ -2072,6 +2163,17 @@ function openAvatarModal(mode, npc, firstTime) {
     : (firstTime
       ? 'Monte o seu personagem nesta campanha: o nome, o ícone e a música tema que os outros vão ver. Dá pra mudar quando quiser clicando no seu ícone no topo da tela.'
       : 'É assim que os outros te veem nesta campanha. Em outra campanha você pode ser outro personagem.');
+  // your account: the login this trainer answers to, or the invitation to create one
+  const acBox = document.getElementById('avAccount');
+  acBox.hidden = isNpc;
+  if (!isNpc) {
+    acBox.innerHTML = myAccount
+      ? `Conta: <b>${esc(myAccount)}</b> — é com ela que você entra nesta campanha de qualquer aparelho.`
+      : `Este treinador ainda não tem conta: quem souber o nome dele pode pedir pra entrar no seu lugar.
+         <div class="top-actions"><button class="btn small" id="avLinkBtn">🔑 Criar minha conta</button></div>`;
+    const lk = document.getElementById('avLinkBtn');
+    if (lk) lk.addEventListener('click', () => { closeAvatarModal(); openLinkModal(); });
+  }
   document.getElementById('avNameLabel').textContent = isNpc ? 'Nome do NPC' : 'Nome do seu personagem';
   const nameInput = document.getElementById('avName');
   nameInput.value = isNpc ? (npc ? npc.name : '') : myCharacter;
@@ -5353,7 +5455,8 @@ function renderSidebar() {
       const login = loginOf(trainer);
       const role = trainer.kind === 'npc' ? '<span class="npc-tag">NPC</span>'
         : trainer.gone ? 'fora da campanha'
-        : (trainer.key === currentTrainer ? 'você' : (trainer.kind === 'gm' ? 'Mestre' : 'Jogador')) + (login ? `: ${esc(login)}` : '');
+        : (trainer.key === currentTrainer ? 'você' : (trainer.kind === 'gm' ? 'Mestre' : 'Jogador')) + (login ? `: ${esc(login)}` : '')
+          + (trainer.kind === 'player' && !trainer.account ? ' · sem conta' : '');
       const opens = trainer.kind !== 'npc' && !trainer.gone;   // the icon opens their character sheet
       html += `<div class="sb-trainer">
         ${opens ? `<span data-open-trainer="${esc(trainer.key)}" title="Ver a ficha de ${esc(trainer.name)}">${avatarHtml(trainer.avatar, trainer.name)}</span>` : avatarHtml(trainer.avatar, trainer.name)}
@@ -5366,6 +5469,7 @@ function renderSidebar() {
       if (trainer.kind !== 'npc' && !trainer.gone) html += `<button class="btn secondary small sb-add" id="sbTrainerSheet">📜 Ficha do treinador</button>`;
       if (trainer.kind === 'npc') html += `<button class="btn secondary small sb-add" id="sbEditNpc">Editar NPC</button>`;
       if (trainer.kind === 'player' && !trainer.gone) html += `<button class="btn danger small sb-add" id="sbKick">Expulsar da campanha</button>`;
+      if (trainer.kind === 'player' && !trainer.gone && trainer.account) html += `<button class="btn secondary small sb-add" id="sbUnlink">🔑 Desvincular conta (${esc(trainer.account)})</button>`;
     } else {
       html += `<div class="sb-group-title">Meus Pokémon</div>`;
       if (!mons.length) html += '<div style="font-size:0.8rem;color:var(--ink-soft);margin-bottom:8px;">Nenhuma ficha ainda.</div>';
@@ -5380,6 +5484,8 @@ function renderSidebar() {
     if (tsBtn) tsBtn.addEventListener('click', () => openTrainerSheet(trainer ? trainer.key : currentTrainer));
     const kickBtn = document.getElementById('sbKick');
     if (kickBtn) kickBtn.addEventListener('click', () => openKickModal(trainer));
+    const unlinkBtn = document.getElementById('sbUnlink');
+    if (unlinkBtn) unlinkBtn.addEventListener('click', () => unlinkTrainer(trainer.key));
     const editBtn = document.getElementById('sbEditNpc');
     if (editBtn) editBtn.addEventListener('click', () => {
       const npc = allNpcs.find(n => n.id === trainer.npcId);
@@ -5521,8 +5627,18 @@ const API = {
       if (write) { API.pendingWrites--; API.writeSeq++; }
     }
   },
-  createRoom(name, gmName) { return API.call('POST', '/rooms', { name, gmName }); },
-  joinRoom(roomId, name) { return API.call('POST', '/rooms/' + encodeURIComponent(roomId) + '/join', { name }); },
+  // the lobby (register, log in, create/enter a campaign) travels on the account token, not a room one
+  async account(method, path, body) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (account && account.token) headers['Authorization'] = 'Bearer ' + account.token;
+    const r = await fetch('/api' + path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    let out = {};
+    try { out = await r.json(); } catch (e) {}
+    if (!r.ok) throw new Error(out.error || ('http_' + r.status));
+    return out;
+  },
+  createRoom(name) { return API.account('POST', '/rooms', { name }); },
+  joinRoom(roomId, name) { return API.account('POST', '/rooms/' + encodeURIComponent(roomId) + '/join', { name }); },
   state() { return API.call('GET', '/state'); },
   savePokemon(mon) { return API.call('POST', '/pokemon', mon); },
   deletePokemon(id) { return API.call('DELETE', '/pokemon/' + encodeURIComponent(id)); },
@@ -5541,6 +5657,19 @@ const ERR_PT = {
   nome_campanha_obrigatorio: 'Dá um nome pra campanha.',
   confirmacao_invalida: 'O nome digitado não confere com o da campanha.',
   sem_token: 'Sua sessão expirou. Entre na sala de novo.',
+  sem_conta: 'Entre na sua conta primeiro.',
+  conta_invalida: 'Sua conta foi desconectada. Entre de novo.',
+  login_invalido: 'Login inválido: de 2 a 24 letras, números ou espaço.',
+  login_em_uso: 'Esse login já é de outra pessoa. Escolhe outro.',
+  login_ou_senha: 'Login ou senha errados.',
+  senha_curta: 'A senha precisa de pelo menos 4 caracteres.',
+  senha_atual_errada: 'A senha atual está errada.',
+  muitas_tentativas: 'Senha errada demais. Espera meio minuto e tenta de novo.',
+  ja_vinculado: 'Esse treinador já tem uma conta.',
+  conta_ja_na_sala: 'Essa conta já tem um treinador nesta campanha.',
+  nome_em_uso: 'Já existe um treinador com esse nome nesta campanha.',
+  pedido_nao_encontrado: 'Esse pedido já foi respondido.',
+  conta_propria: 'Você não pode desvincular a sua própria conta.',
   outra_sala: 'Essa ficha é de outra sala.',
   so_mestre: 'Só o Mestre pode fazer isso.',
   dono_invalido: 'Esse treinador não existe mais nesta sala.',
@@ -5571,6 +5700,8 @@ function applyState(st) {
     if (session) { session.roomName = st.room.name; saveSessionLocal(session); }
   }
   roomBanned = (st.room && st.room.banned) || [];
+  roomClaims = (st.room && st.room.claims) || [];
+  myAccount = (st.me && st.me.account) || '';
   mySheet = (st.me && st.me.sheet) || null;
   allMons = (st.pokemon || []).map(withoutLegacyMega);
   allTeams = st.teams || [];
@@ -5635,18 +5766,51 @@ function openRoomModal() {
   document.getElementById('rmConfirm').value = '';
   document.getElementById('rmDeleteBtn').disabled = true;
   renderBannedList();
+  renderClaimList();
   document.getElementById('roomModal').hidden = false;
   document.getElementById('rmName').focus();
 }
 function closeRoomModal() { document.getElementById('roomModal').hidden = true; }
 // GM: names blocked from joining (after an "Expulsar" with the block on), each with "Desbloquear"
 let roomBanned = [];
+// GM: accounts asking for a trainer that has none yet; '' in myAccount = my own trainer has no account
+let roomClaims = [];
+let myAccount = '';
+const linkPrompted = new Set();
 function renderBannedList() {
   const box = document.getElementById('rmBanned');
   box.hidden = !roomBanned.length;
   box.innerHTML = roomBanned.length ? `<label>Nomes bloqueados</label>${roomBanned.map(n =>
     `<div class="rm-banned-row"><span>${esc(n)}</span><button class="mini-btn" data-unban="${esc(n)}">Desbloquear</button></div>`).join('')}` : '';
 }
+/* GM: someone with an account asking for a trainer that still has none. Approving hands that
+   trainer — and every ficha of it — to that account, so it is worth checking who is asking. */
+function renderClaimList() {
+  const box = document.getElementById('rmClaims');
+  box.hidden = !roomClaims.length;
+  box.innerHTML = roomClaims.length ? `<label>Pedidos de entrada</label>${roomClaims.map(c =>
+    `<div class="rm-claim">A conta <b>${esc(c.login)}</b> quer entrar como <b>${esc(c.name)}</b>, que ainda não tem conta.
+       Só aprove se for essa pessoa mesmo: ela fica com as fichas do ${esc(c.name)}.
+       <div class="top-actions">
+         <button class="btn small" data-claim-ok="${esc(c.id)}">Aprovar</button>
+         <button class="btn secondary small" data-claim-no="${esc(c.id)}">Recusar</button>
+       </div></div>`).join('')}` : '';
+}
+async function answerClaim(id, approve) {
+  const c = roomClaims.find(x => x.id === id);
+  if (approve && c && !confirm(`Entregar o treinador "${c.name}" (e as fichas dele) pra conta ${c.login}?`)) return;
+  try { await API.call('POST', '/claims/' + encodeURIComponent(id), { approve: !!approve }); } catch (e) { alert(errMsg(e)); return; }
+  roomClaims = roomClaims.filter(x => x.id !== id);
+  renderClaimList();
+  refreshState();
+}
+// GM: a player lost the account that held their trainer — unbinding lets them claim it again
+async function unlinkTrainer(name) {
+  if (!confirm(`Desvincular a conta de "${name}"?\n\nAs fichas ficam onde estão. A pessoa vai poder pedir esse treinador de novo com outra conta, e você aprova.`)) return;
+  try { await API.call('DELETE', '/members/' + encodeURIComponent(name) + '/account'); } catch (e) { alert(errMsg(e)); return; }
+  refreshState();
+}
+
 async function unbanName(name) {
   try { await API.call('DELETE', '/room/banned/' + encodeURIComponent(name)); } catch (e) { alert(errMsg(e)); return; }
   roomBanned = roomBanned.filter(n => n !== name);
@@ -5733,24 +5897,115 @@ function showLobby() {
   if (monArtCtx) closeMonArtModal();
   tsCtx = null; document.getElementById('trainerSheetHost').style.display = 'none';
   clearTimeout(pollTimer); pollTimer = null; lastStateRaw = '';
+  closeLinkModal();
+  myAccount = ''; roomClaims = [];
+  renderAccountUi();
   renderRecentRooms();
+  loadMyRooms().then(renderRecentRooms);
 }
 
+/* ===== Account (lobby) ===== */
+function renderAccountUi() {
+  const inBox = document.getElementById('accountIn'), outBox = document.getElementById('accountOut');
+  inBox.hidden = !account;
+  outBox.hidden = !!account;
+  document.getElementById('lobbyRooms').hidden = !account && !loadSessions().length;
+  if (account) document.getElementById('acWho').textContent = account.login;
+}
+let acMode = 'login';   // 'login' | 'register'
+function setAccountMode(mode) {
+  acMode = mode;
+  const reg = mode === 'register';
+  document.getElementById('acTitle').textContent = reg ? 'Criar uma conta' : 'Entrar na sua conta';
+  document.getElementById('acIntro').textContent = reg
+    ? 'Escolha um login e uma senha. A conta vale pro site inteiro: com ela você entra em qualquer campanha, de qualquer aparelho.'
+    : 'Sua conta vale pro site inteiro: com ela você entra em qualquer campanha, de qualquer aparelho.';
+  document.getElementById('acSubmitBtn').textContent = reg ? 'Criar conta' : 'Entrar';
+  document.getElementById('acToggleBtn').textContent = reg ? 'Já tenho conta' : 'Criar uma conta';
+  document.getElementById('acPass').setAttribute('autocomplete', reg ? 'new-password' : 'current-password');
+}
+async function submitAccount() {
+  const login = document.getElementById('acLogin').value.trim();
+  const pass = document.getElementById('acPass').value;
+  if (!login) { alert('Preenche o login.'); return; }
+  if (!pass) { alert('Preenche a senha.'); return; }
+  try {
+    const r = await API.account('POST', '/account/' + (acMode === 'register' ? 'register' : 'login'), { login, pass });
+    saveAccount({ token: r.token, login: r.login });
+    document.getElementById('acPass').value = '';
+    await loadMyRooms();
+    renderAccountUi();
+    renderRecentRooms();
+  } catch (e) { alert(errMsg(e)); }
+}
+async function loadMyRooms() {
+  if (!account) { myRooms = []; return; }
+  try {
+    const r = await API.account('GET', '/account/rooms');
+    myRooms = r.rooms || [];
+    if (r.login && r.login !== account.login) saveAccount({ ...account, login: r.login });
+  } catch (e) {
+    myRooms = [];
+    if (e.message === 'conta_invalida' || e.message === 'sem_conta') saveAccount(null);   // session cut off elsewhere
+  }
+}
+function logoutAccount() {
+  saveAccount(null);
+  myRooms = [];
+  document.getElementById('acPass').value = '';
+  setAccountMode('login');
+  renderAccountUi();
+  renderRecentRooms();
+}
+async function changeAccountPassword() {
+  const current = document.getElementById('pwCurrent').value;
+  const next = document.getElementById('pwNext').value;
+  if (!current || !next) { alert('Preenche as duas senhas.'); return; }
+  try {
+    const r = await API.account('PUT', '/account/password', { current, next });
+    saveAccount({ ...account, token: r.token });
+    document.getElementById('passModal').hidden = true;
+    alert('Senha trocada. Os outros aparelhos foram desconectados.');
+  } catch (e) { alert(errMsg(e)); }
+}
+
+/* The campaigns of the account, plus any room this device still holds a session for — that is how a
+   campaign from before the login shows up, so you can go in and create your account from inside it. */
+function lobbyRooms() {
+  const byId = new Map();
+  myRooms.forEach(r => byId.set(r.roomId, { ...r }));
+  loadSessions().forEach(s => {
+    const cur = byId.get(s.roomId);
+    if (cur) { cur.token = s.token; return; }
+    byId.set(s.roomId, { roomId: s.roomId, roomName: s.roomName, name: s.name, role: s.role, character: s.character, token: s.token, unlinked: true });
+  });
+  return [...byId.values()];
+}
 function renderRecentRooms() {
-  const sessions = loadSessions();
+  const rooms = lobbyRooms();
   const box = document.getElementById('recentRooms');
   const list = document.getElementById('recentRoomsList');
-  if (!sessions.length) { box.style.display = 'none'; return; }
+  if (!rooms.length) { box.style.display = 'none'; return; }
   box.style.display = 'block';
   list.innerHTML = '';
-  sessions.forEach(sess => {
+  rooms.forEach(r => {
     const div = document.createElement('div');
     div.className = 'mon-item';
-    div.innerHTML = `<div><strong>${esc(sess.roomName || sess.roomId)}</strong><br><span class="info">${sess.role === 'gm' ? 'Mestre' : 'Jogador'} · ${esc(sess.name)}${sess.character && sess.character !== sess.name ? ' (como ' + esc(sess.character) + ')' : ''}</span></div>
+    const as = r.character && r.character !== r.name ? ' (como ' + esc(r.character) + ')' : '';
+    const warn = r.unlinked ? ' · <span style="color:var(--gold);">sem conta</span>' : '';
+    div.innerHTML = `<div><strong>${esc(r.roomName || r.roomId)}</strong><br><span class="info">${r.role === 'gm' ? 'Mestre' : 'Jogador'} · ${esc(r.name)}${as}${warn}</span></div>
       <div><button class="btn small enter-btn">Entrar</button></div>`;
-    div.querySelector('.enter-btn').addEventListener('click', () => enterRoom(sess));
+    div.querySelector('.enter-btn').addEventListener('click', () => enterKnownRoom(r));
     list.appendChild(div);
   });
+}
+// a session already on this device goes straight in; otherwise the account asks the room for a token
+async function enterKnownRoom(r) {
+  if (r.token) { await enterRoom(r); return; }
+  try {
+    const j = await API.joinRoom(r.roomId, '');
+    await enterRoom({ roomId: r.roomId, role: j.role, name: j.trainer, token: j.token, roomName: j.name });
+  } catch (e) { alert(errMsg(e)); }
 }
 
 async function enterRoom(sess) {
@@ -5794,7 +6049,11 @@ async function enterRoom(sess) {
   renderSidebar(); renderTeamList();
   schedulePoll();
   updateBattleNotice();
-  if (!myCharacter && !characterPrompted.has(session.roomId)) {
+  // a trainer from before the login: ask once per campaign, then leave the person alone
+  if (!myAccount && !linkPrompted.has(session.roomId)) {
+    linkPrompted.add(session.roomId);
+    openLinkModal();
+  } else if (!myCharacter && !characterPrompted.has(session.roomId)) {
     characterPrompted.add(session.roomId);
     openAvatarModal('me', null, true);
   }
@@ -5878,24 +6137,53 @@ async function seedTestTrainers() {
 }
 
 async function createRoom() {
-  const name = document.getElementById('lobbyName').value.trim();
   const roomName = document.getElementById('newRoomName').value.trim();
-  if (!name) { alert('Preenche seu nome primeiro.'); return; }
+  if (!account) { alert('Entre na sua conta primeiro.'); return; }
   try {
-    const r = await API.createRoom(roomName, name);
-    await enterRoom({ roomId: r.roomId, role: 'gm', name, token: r.token, roomName: r.name });
+    const r = await API.createRoom(roomName);
+    await enterRoom({ roomId: r.roomId, role: 'gm', name: r.trainer, token: r.token, roomName: r.name });
   } catch (e) { alert(errMsg(e)); }
 }
 
 async function joinRoom() {
-  const name = document.getElementById('lobbyName').value.trim();
   const code = document.getElementById('joinCode').value.trim().toUpperCase();
-  if (!name) { alert('Preenche seu nome primeiro.'); return; }
+  const trainer = document.getElementById('joinTrainer').value.trim();
+  if (!account) { alert('Entre na sua conta primeiro.'); return; }
   if (!code) { alert('Preenche o código da sala.'); return; }
   try {
-    const r = await API.joinRoom(code, name);
-    await enterRoom({ roomId: r.roomId, role: 'player', name, token: r.token, roomName: r.name });
+    const r = await API.joinRoom(code, trainer);
+    // the name belongs to a trainer from before the login: only the GM can hand it over
+    if (r.pending) {
+      alert(`"${r.name}" é um treinador que ainda não tem conta.\n\nSeu pedido foi enviado: peça pro Mestre aprovar em ⚙ Campanha e clique em Entrar de novo.`);
+      return;
+    }
+    await enterRoom({ roomId: r.roomId, role: r.role, name: r.trainer, token: r.token, roomName: r.name });
+  } catch (e) { alert(errMsg(e)); }
+}
 
+/* ===== The account of a trainer from before the login existed ===== */
+// Being inside the campaign already is the proof: the room token in hand is what says it is you.
+function openLinkModal() {
+  if (!session) return;
+  document.getElementById('lkWho').textContent = session.name || '';
+  document.getElementById('lkLogin').value = (account && account.login) || session.name || '';
+  document.getElementById('lkPass').value = '';
+  document.getElementById('linkModal').hidden = false;
+  document.getElementById('lkPass').focus();
+}
+function closeLinkModal() { document.getElementById('linkModal').hidden = true; }
+async function linkAccount() {
+  const login = document.getElementById('lkLogin').value.trim();
+  const pass = document.getElementById('lkPass').value;
+  if (!login) { alert('Escolhe um login.'); return; }
+  if (!pass) { alert('Escolhe uma senha.'); return; }
+  try {
+    const r = await API.call('POST', '/me/link', { login, pass });
+    saveAccount({ token: r.token, login: r.login });
+    myAccount = r.login;
+    closeLinkModal();
+    await refreshState();
+    alert(`Pronto. "${session.name}" agora é da conta ${r.login} — entre de qualquer aparelho com ela.`);
   } catch (e) { alert(errMsg(e)); }
 }
 
@@ -5917,6 +6205,25 @@ async function init() {
 
   document.getElementById('createRoomBtn').addEventListener('click', createRoom);
   document.getElementById('joinRoomBtn').addEventListener('click', joinRoom);
+  document.getElementById('acSubmitBtn').addEventListener('click', submitAccount);
+  document.getElementById('acToggleBtn').addEventListener('click', () => setAccountMode(acMode === 'register' ? 'login' : 'register'));
+  document.getElementById('acLogoutBtn').addEventListener('click', logoutAccount);
+  document.getElementById('acPassBtn').addEventListener('click', () => {
+    document.getElementById('pwCurrent').value = ''; document.getElementById('pwNext').value = '';
+    document.getElementById('passModal').hidden = false;
+    document.getElementById('pwCurrent').focus();
+  });
+  document.getElementById('pwSaveBtn').addEventListener('click', changeAccountPassword);
+  document.getElementById('pwCancelBtn').addEventListener('click', () => { document.getElementById('passModal').hidden = true; });
+  document.getElementById('pwNext').addEventListener('keydown', (e) => { if (e.key === 'Enter') changeAccountPassword(); });
+  ['acLogin', 'acPass'].forEach(id => document.getElementById(id)
+    .addEventListener('keydown', (e) => { if (e.key === 'Enter') submitAccount(); }));
+  ['joinCode', 'joinTrainer'].forEach(id => document.getElementById(id)
+    .addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(); }));
+  document.getElementById('newRoomName').addEventListener('keydown', (e) => { if (e.key === 'Enter') createRoom(); });
+  document.getElementById('lkSaveBtn').addEventListener('click', linkAccount);
+  document.getElementById('lkLaterBtn').addEventListener('click', closeLinkModal);
+  document.getElementById('lkPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') linkAccount(); });
   document.getElementById('inviteBtn').addEventListener('click', showInvite);
   document.getElementById('leaveRoomBtn').addEventListener('click', () => { try { location.hash = ''; } catch(e){} showLobby(); });
   document.getElementById('teamsBtn').addEventListener('click', () => {
@@ -5961,12 +6268,24 @@ async function init() {
   });
   document.getElementById('rmDeleteBtn').addEventListener('click', deleteRoom);
   document.getElementById('rmBanned').addEventListener('click', (e) => { const b = e.target.closest('[data-unban]'); if (b) unbanName(b.dataset.unban); });
+  document.getElementById('rmClaims').addEventListener('click', (e) => {
+    const ok = e.target.closest('[data-claim-ok]'), no = e.target.closest('[data-claim-no]');
+    if (ok) answerClaim(ok.dataset.claimOk, true);
+    else if (no) answerClaim(no.dataset.claimNo, false);
+  });
   document.getElementById('kkCancel').addEventListener('click', closeKickModal);
   document.getElementById('kkGo').addEventListener('click', kickPlayer);
   document.getElementById('kkDelete').addEventListener('change', updateKickNote);
   document.getElementById('kickModal').addEventListener('click', (e) => { if (e.target.id === 'kickModal') closeKickModal(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.getElementById('kickModal').hidden) closeKickModal(); });
   document.getElementById('roomModal').addEventListener('click', (e) => { if (e.target.id === 'roomModal') closeRoomModal(); });
+  document.getElementById('linkModal').addEventListener('click', (e) => { if (e.target.id === 'linkModal') closeLinkModal(); });
+  document.getElementById('passModal').addEventListener('click', (e) => { if (e.target.id === 'passModal') document.getElementById('passModal').hidden = true; });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (!document.getElementById('linkModal').hidden) closeLinkModal();
+    else if (!document.getElementById('passModal').hidden) document.getElementById('passModal').hidden = true;
+  });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !document.getElementById('roomModal').hidden) closeRoomModal(); });
   document.getElementById('fieldModal').addEventListener('click', onFieldModalClick);
   document.getElementById('fxInf').addEventListener('change', renderFieldModal);
@@ -6093,15 +6412,19 @@ async function init() {
   document.getElementById('saveTeamBtn').addEventListener('click', saveTeam);
 
   document.getElementById('lobbyStatus').textContent = '✓ conectado ao servidor';
+  account = loadAccount();
+  setAccountMode('login');
+  await loadMyRooms();
+  renderAccountUi();
   renderRecentRooms();
 
   const m = (location.hash || '').match(/sala=([A-Za-z0-9]+)/);
   if (m) {
     const roomId = m[1].toUpperCase();
     document.getElementById('joinCode').value = roomId;
-    const known = loadSessions().find(s => s.roomId === roomId);
-    if (known) await enterRoom(known);
-    else document.getElementById('lobbyName').focus();
+    const known = lobbyRooms().find(r => r.roomId === roomId);
+    if (known) await enterKnownRoom(known);
+    else document.getElementById(account ? 'joinTrainer' : 'acLogin').focus();
   }
 }
 init();

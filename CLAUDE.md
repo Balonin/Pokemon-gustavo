@@ -86,6 +86,30 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
 
 ## Papéis e permissões
 
+- **Conta (login e senha)**: vale pro site inteiro (tabela `users`: `login`, `login_key` = login em
+  minúsculas e único, `pass` = scrypt `s1$salt$hash`; sessões em `user_sessions`). O lobby inteiro
+  (`POST /api/account/register` e `/login`, `GET /api/account/rooms`, `PUT /api/account/password`,
+  criar sala e entrar em sala) anda no **token de conta**; tudo que é de dentro da sala continua no
+  **token da sala** (`members.token`). São dois tokens diferentes, guardados em `gustavo_account` e
+  `gustavo_sessions` no `localStorage`.
+  **A conta não é dona de nada**: ela é *vinculada* ao treinador de cada sala (`members.user_id`), e o
+  `owner` da ficha continua sendo o nome do treinador. Por isso o login entrou numa campanha que já
+  estava rodando sem migrar uma ficha sequer, e dois "Diogo" em campanhas diferentes seguem sendo duas
+  pessoas. Trocar a senha desconecta a conta em todos os aparelhos (não derruba o token da sala).
+  5 senhas erradas seguidas põem aquele login de castigo por 30s (em memória)
+- **Entrar numa campanha** (`POST /api/rooms/:id/join`, com conta) tem três saídas: a conta **já joga
+  ali** → token novo pro treinador dela (qualquer aparelho, mesmo treinador); o nome está **livre** →
+  cria o treinador já vinculado; o nome é de um treinador **de antes do login** (sem conta) → vira um
+  **pedido** (`rooms.claims`, um por conta) que **só o Mestre aprova**, no ⚙ da campanha
+  (`POST /api/claims/:id { approve }`). Nome já vinculado a outra conta é recusado (`nome_em_uso`).
+  Era exatamente aqui que morava o furo: antes bastava digitar o nome de outra pessoa pra receber as
+  fichas dela
+- **Quem já estava na campanha antes do login** vincula a conta de dentro do app
+  (`POST /api/me/link`, com o token da sala — estar dentro já prova que é você): a janela abre sozinha
+  na entrada, uma vez por campanha, e o botão fica na janela de caracterização ("🔑 Criar minha conta").
+  O login pode ser diferente do nome do treinador. O Mestre vê quem ainda está "sem conta" na barra
+  lateral e desvincula pra recuperação (`DELETE /api/members/:nome/account`), aí a pessoa pede de novo
+  com outra conta. Quem perdeu a conta *e* a sessão depende dessa aprovação do Mestre
 - Quem cria a sala é **Mestre**; quem entra pelo código/link é **Jogador**
 - **Campanha (sala)**: só o Mestre, pelo ⚙ ao lado do nome, renomeia (`PUT /api/room { name }`) ou
   exclui (`DELETE /api/room { confirm: <nome da campanha> }` — o servidor confere o nome). Excluir apaga
@@ -100,9 +124,10 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   `roomTrainers`), e voltam pro jogador se ele entrar de novo com o mesmo nome. `block` põe o nome em
   `rooms.banned` (JSON; comparação sem diferenciar maiúsculas), e a entrada recusa com
   `nome_bloqueado`. Só o Mestre recebe `room.banned`; desbloqueia no ⚙ (`DELETE /api/room/banned/:nome`).
-  É bloqueio por nome — sem senha, quem tem o código entra com outro nome
-- **Nome de login × personagem**: o nome digitado no lobby (`members.name`) é a identidade — é
-  ele que está no `owner` das fichas e não muda (vai virar o login com senha). O **personagem**
+  É bloqueio por nome: quem tem o código ainda pode entrar com outra conta e outro nome de treinador
+- **Nome do treinador × personagem**: o nome do treinador na sala (`members.name`) é a identidade —
+  é ele que está no `owner` das fichas e não muda; a conta que responde por ele é o
+  `members.user_id`. O **personagem**
   (`members.char_name`, `character` no JSON) é por sala, pode mudar a qualquer hora
   (`PUT /api/me/character`) e é o que aparece pros outros (`roomTrainers`, `trainerInfo`); vazio =
   mostra o nome de login. Ao entrar numa sala sem personagem, a janela de caracterização abre sozinha.
@@ -122,8 +147,8 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   perfil sem Status). Jogador: a própria, editável; a de outro, **só leitura** (`openTrainerProfile`) com
   nome, imagem e Status — que vêm em `trainerInfo` (`stats`, `art`). **As anotações nunca saem do servidor
   pra outro jogador**
-- Cada pessoa recebe um **token** salvo no `localStorage` e enviado no header
-  `Authorization: Bearer <token>`
+- Cada pessoa recebe um **token de sala** salvo no `localStorage` e enviado no header
+  `Authorization: Bearer <token>` (o token de conta usa o mesmo header, só nas rotas do lobby)
 - **As permissões são aplicadas no servidor**, não no cliente:
   - Jogador só lê e edita as próprias fichas
   - Mestre lê e edita todas as fichas da sala
