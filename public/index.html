@@ -5758,6 +5758,7 @@ function renderTeamList() {
 
 // ===== API client =====
 let lastStateRaw = '';   // the last state drawn: an identical answer isn't redrawn (any change clears it)
+let lastStateVer = '';   // the server's tag for it: sent back, and while nothing changed the answer is empty (204)
 const API = {
   token: null,
   // changes in flight / sent so far: a state poll that crossed one is stale (see refreshState)
@@ -5794,6 +5795,18 @@ const API = {
   createRoom(name) { return API.account('POST', '/rooms', { name }); },
   joinRoom(roomId, name) { return API.account('POST', '/rooms/' + encodeURIComponent(roomId) + '/join', { name }); },
   state() { return API.call('GET', '/state'); },
+  // the poll: sends the tag of what's drawn; { same: true } when the server has nothing new
+  async poll(ver) {
+    const headers = { Authorization: 'Bearer ' + API.token };
+    if (ver) headers['X-State-Version'] = ver;
+    const r = await fetch('/api/state', { headers, cache: 'no-store' });
+    const tag = r.headers.get('X-State-Version') || '';
+    if (r.status === 204) return { same: true, ver: tag };
+    let out = {};
+    try { out = await r.json(); } catch (e) {}
+    if (!r.ok) throw new Error(out.error || ('http_' + r.status));
+    return { st: out, ver: tag };
+  },
   savePokemon(mon) { return API.call('POST', '/pokemon', mon); },
   deletePokemon(id) { return API.call('DELETE', '/pokemon/' + encodeURIComponent(id)); },
   saveTeam(team) { return API.call('POST', '/teams', team); },
@@ -5889,11 +5902,13 @@ async function refreshState() {
   if (!session) return;
   const seq = API.writeSeq;
   try {
-    const st = await API.state();
+    const got = await API.poll(lastStateRaw ? lastStateVer : '');
     // a change went out while this was on its way: the answer may predate it and undo an optimistic update
     if (seq !== API.writeSeq || API.pendingWrites) return;
-    const raw = JSON.stringify(st);
-    if (raw === lastStateRaw) return;   // nothing changed: no redraw (keeps hover, scroll and open menus)
+    if (got.same) return;   // the server has nothing newer than what's drawn
+    const st = got.st, raw = JSON.stringify(st);
+    // nothing changed: no redraw (keeps hover, scroll and open menus)
+    if (raw === lastStateRaw) { lastStateVer = got.ver; return; }
     applyState(st);
     renderSidebar();
     renderTrainerHead();   // an open trainer sheet follows a new name / icon
@@ -5901,6 +5916,7 @@ async function refreshState() {
     const typing = document.activeElement && document.activeElement.matches('#battleArena input');
     if (battleMode && !typing) renderBattle();
     lastStateRaw = battleMode && typing ? '' : raw;
+    lastStateVer = got.ver;
     if (document.getElementById('teamsPanel').style.display === 'block') renderTeamList();
   } catch (e) {
     if ((e.message === 'token_invalido' || e.message === 'sem_token') && session) {

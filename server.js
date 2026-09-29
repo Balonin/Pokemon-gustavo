@@ -1,8 +1,10 @@
 const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
+const compression = require('compression');
 
 const app = express();
+app.use(compression());   // the page and the state go gzipped (audio and pictures are left as they are)
 app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -260,10 +262,10 @@ if (DATABASE_URL) {
       return { id: x.id, roomId: x.room_id, owner: x.owner, mime: x.mime };
     },
     async getMedia(id) {
-      const r = await pool.query('SELECT id, room_id, mime, data FROM media WHERE id = $1', [id]);
+      const r = await pool.query('SELECT id, room_id, owner, mime, data FROM media WHERE id = $1', [id]);
       if (!r.rows[0]) return null;
       const x = r.rows[0];
-      return { id: x.id, roomId: x.room_id, mime: x.mime, data: x.data };
+      return { id: x.id, roomId: x.room_id, owner: x.owner, mime: x.mime, data: x.data };
     },
     async deleteMedia(id) { await pool.query('DELETE FROM media WHERE id = $1', [id]); },
     async listPokemon(roomId) {
@@ -416,6 +418,112 @@ if (DATABASE_URL) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Read cache                                                          */
+/* ------------------------------------------------------------------ */
+/* Every screen asks for the whole room every 1–5 s, and the room only changes when someone saves
+   something. Reading the room from the database on every ask is what spent the monthly transfer of the
+   database, so: each room has a version in memory, moved by every change (any request that isn't a
+   GET moves it right before it answers, when its writes are done). While the version stays the same the
+   room is read from the database once and kept here, for every screen; and a screen that already has
+   that version is answered "nothing new" (204). The version carries a boot id, so a restart (which
+   empties the memory) never matches an old one. The app runs as a single instance on Render, so the
+   memory is the only one there is. */
+const BOOT_ID = crypto.randomBytes(4).toString('hex');
+const roomVers = new Map();   // roomId → counter
+let globalVer = 0;            // changes that don't come from inside a room (the lobby)
+let writeCount = 0;           // every change anywhere: a read that crossed one isn't kept
+function roomVersion(roomId) { return `${BOOT_ID}.${globalVer}.${roomVers.get(roomId) || 0}`; }
+function bumpRoom(roomId) {
+  writeCount++;
+  if (roomId) roomVers.set(roomId, (roomVers.get(roomId) || 0) + 1); else globalVer++;
+}
+app.use((req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD') return next();
+  const end = res.end;
+  res.end = function (...args) {
+    const join = /^\/api\/rooms\/([^/]+)\/join$/.exec(req.path);
+    bumpRoom(req.member ? req.member.roomId : (join ? join[1] : null));
+    return end.apply(this, args);
+  };
+  next();
+});
+
+// the room as the database has it, at most one read per version; each caller gets its own copy
+const roomCache = new Map();   // roomId → { ver, json: Promise<string> }
+async function roomSnapshot(roomId, ver) {
+  const hit = roomCache.get(roomId);
+  if (hit && hit.ver === ver) return JSON.parse(await hit.json);
+  const json = (async () => {
+    const room = await store.getRoom(roomId);
+    if (!room) return 'null';
+    const [pokemon, teams, battles, members, npcs] = await Promise.all([
+      store.listPokemon(roomId), store.listTeams(roomId), store.listBattles(roomId),
+      store.listMembers(roomId), store.listNpcs(roomId)]);
+    // the login behind each trainer (a login never changes, and binding one is a change of the room)
+    const logins = {};
+    for (const x of members) if (x.userId && !(x.userId in logins)) logins[x.userId] = await loginOfUser(x.userId);
+    return JSON.stringify({ room, pokemon, teams, battles, members, npcs, logins });
+  })();
+  if (roomCache.size > 200) roomCache.clear();
+  roomCache.set(roomId, { ver, json });
+  try { return JSON.parse(await json); }
+  catch (e) { if (roomCache.get(roomId) && roomCache.get(roomId).json === json) roomCache.delete(roomId); throw e; }
+}
+
+// who a room token is: read again whenever that room changes (a kick or a deleted room ends it at once)
+const memberCache = new Map();   // token → { roomId, ver, json }
+async function memberOfToken(t) {
+  const hit = memberCache.get(t);
+  if (hit && hit.ver === roomVersion(hit.roomId)) return JSON.parse(hit.json);
+  const before = writeCount;
+  const member = await store.getMember(t);
+  if (!member) { memberCache.delete(t); return null; }
+  if (writeCount === before) {   // nothing changed while it was read: good until the room changes
+    if (memberCache.size > 2000) memberCache.clear();
+    memberCache.set(t, { roomId: member.roomId, ver: roomVersion(member.roomId), json: JSON.stringify(member) });
+  }
+  return member;
+}
+
+/* Uploaded files (theme music, pictures) never change: a new one is a new id. The most used stay in
+   memory, so the audio player's many range requests don't read the whole file from the database each
+   time; a deleted one leaves the memory with it. */
+const MEDIA_CACHE_MAX = 48 * 1024 * 1024;
+const mediaCache = new Map();   // id → { roomId, owner, mime, data }, least recently used first
+const mediaLoading = new Map(); // id → Promise, so parallel requests share one read
+let mediaCacheBytes = 0;
+function dropMedia(test) {
+  for (const [id, f] of mediaCache) if (test(id, f)) { mediaCache.delete(id); mediaCacheBytes -= f.data.length; }
+}
+async function mediaFile(id) {
+  const hit = mediaCache.get(id);
+  if (hit) { mediaCache.delete(id); mediaCache.set(id, hit); return hit; }
+  if (mediaLoading.has(id)) return mediaLoading.get(id);
+  const before = writeCount;
+  const p = (async () => {
+    const f = await store.getMedia(id);
+    if (!f) return null;
+    const e = { roomId: f.roomId, owner: f.owner, mime: f.mime, data: Buffer.from(f.data) };
+    if (writeCount === before && e.data.length <= MEDIA_CACHE_MAX / 4) {   // not if it may have been deleted meanwhile
+      mediaCache.set(id, e); mediaCacheBytes += e.data.length;
+      for (const [oldId, old] of mediaCache) {
+        if (mediaCacheBytes <= MEDIA_CACHE_MAX) break;
+        mediaCache.delete(oldId); mediaCacheBytes -= old.data.length;
+      }
+    }
+    return e;
+  })();
+  mediaLoading.set(id, p);
+  try { return await p; } finally { mediaLoading.delete(id); }
+}
+{
+  const { deleteMedia, deleteMediaOf, deleteRoom } = store;
+  store.deleteMedia = async id => { await deleteMedia(id); dropMedia(x => x === id); };
+  store.deleteMediaOf = async (roomId, owner) => { await deleteMediaOf(roomId, owner); dropMedia((x, f) => f.roomId === roomId && f.owner === owner); };
+  store.deleteRoom = async id => { await deleteRoom(id); dropMedia((x, f) => f.roomId === id); };
+}
+
+/* ------------------------------------------------------------------ */
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
 function parseNameList(s) {
@@ -502,7 +610,7 @@ async function accountAuth(req, res, next) {
 async function auth(req, res, next) {
   const t = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
   if (!t) return res.status(401).json({ error: 'sem_token' });
-  const member = await store.getMember(t);
+  const member = await memberOfToken(t);
   if (!member) return res.status(401).json({ error: 'token_invalido' });
   req.member = member;
   next();
@@ -756,17 +864,17 @@ function typesInBattle(p) {
 }
 const TERA_TYPES = ['Normal', 'Fogo', 'Água', 'Grama', 'Elétrico', 'Gelo', 'Lutador', 'Venenoso', 'Solo',
   'Voador', 'Psíquico', 'Inseto', 'Pedra', 'Fantasma', 'Dragão', 'Sombrio', 'Aço', 'Fada', 'Astral'];
-async function trainerInfo(roomId) {
+async function trainerInfo(roomId, loaded) {   // loaded = { members, npcs } already read, if any
   const info = {};
   // `art`: the trainer sheet's picture (high resolution), for the end-of-battle art's portrait;
   // `stats` and `badges`: for the public profile (clicking a trainer's icon). Notes, Pokécoins and
   // Pokébolas stay private.
-  uniqueMembers(await store.listMembers(roomId)).forEach(x => {
+  uniqueMembers(loaded ? loaded.members : await store.listMembers(roomId)).forEach(x => {
     info[x.name] = { name: x.character || x.name, avatar: x.avatar, theme: x.theme || null,
       art: (x.sheet && x.sheet.art) || null, stats: (x.sheet && x.sheet.stats) || null,
       badges: x.sheet ? cleanBadges(x.sheet.badges) : [] };
   });
-  (await store.listNpcs(roomId)).forEach(n => { info[npcOwner(n.id)] = { name: n.name, avatar: n.avatar || '', theme: n.theme || null }; });
+  (loaded ? loaded.npcs : await store.listNpcs(roomId)).forEach(n => { info[npcOwner(n.id)] = { name: n.name, avatar: n.avatar || '', theme: n.theme || null }; });
   return info;
 }
 /* Battle log. Entries are written by the server from what the GM does (switches, HP and
@@ -1383,38 +1491,48 @@ async function loginOfUser(userId) {
   return u ? u.login : '';
 }
 // members with `account` (the login bound to each) in place of the raw id; never their password
-async function withLogins(members) {
-  const logins = new Map();
-  for (const x of members) if (x.userId && !logins.has(x.userId)) logins.set(x.userId, await loginOfUser(x.userId));
-  return members.map(({ userId, ...x }) => ({ ...x, account: logins.get(userId) || '' }));
+// (logins: userId → login already read, if any)
+async function withLogins(members, logins) {
+  if (!logins) {
+    logins = {};
+    for (const x of members) if (x.userId && !(x.userId in logins)) logins[x.userId] = await loginOfUser(x.userId);
+  }
+  return members.map(({ userId, ...x }) => ({ ...x, account: logins[userId] || '' }));
 }
 
+// The room from the read cache (see "Read cache"). The answer depends only on the room's version and on
+// who asks (the token), so both make the tag: a screen that sends the tag it already has gets a 204.
 app.get('/api/state', auth, async (req, res) => {
   try {
     const m = req.member;
-    const room = await store.getRoom(m.roomId);
-    if (!room) return res.status(404).json({ error: 'sala_nao_encontrada' });
-    const roomMons = await store.listPokemon(m.roomId);
+    const ver = roomVersion(m.roomId);
+    const tag = ver + '.' + crypto.createHash('sha1').update(req.headers.authorization || '').digest('hex').slice(0, 10);
+    res.set({ 'Cache-Control': 'no-store', 'X-State-Version': tag });
+    if (req.get('X-State-Version') === tag) return res.status(204).end();
+    const snap = await roomSnapshot(m.roomId, ver);
+    if (!snap) return res.status(404).json({ error: 'sala_nao_encontrada' });
+    const { room, logins } = snap;
+    const roomMons = snap.pokemon;
     let pokemon = roomMons;
-    let teams = await store.listTeams(m.roomId);
-    let battles = await store.listBattles(m.roomId);
+    let teams = snap.teams;
+    let battles = snap.battles;
     if (!isGM(m)) {
       pokemon = pokemon.filter(p => p.owner === m.name);
       teams = teams.filter(t => t.owner === m.name);
       // players get every battle of the room, filtered down to what they may see: the ones they
       // fight in with their own side in full, the others as a spectator
-      const info = battles.length ? await trainerInfo(m.roomId) : {};
+      const info = battles.length ? await trainerInfo(m.roomId, snap) : {};
       battles = battles.map(b => (SIDES.some(s => b.sides[s].owner === m.name)
         ? playerBattleView(b, m.name, roomMons, info) : spectatorBattleView(b, roomMons, info)));
     }
     // the GM sees which trainers already have an account behind them (`account`: the login), so a
     // trainer still without one stands out and can be unbound for recovery
-    const members = isGM(m) ? await withLogins(uniqueMembers(await store.listMembers(m.roomId))) : [];
-    const npcs = isGM(m) ? await store.listNpcs(m.roomId) : [];
+    const members = isGM(m) ? await withLogins(uniqueMembers(snap.members), logins) : [];
+    const npcs = isGM(m) ? snap.npcs : [];
     res.json({
       room: { id: room.id, name: room.name, gmName: room.gmName,
         ...(isGM(m) ? { banned: room.banned || [], claims: (room.claims || []).map(c => ({ id: c.id, login: c.login, name: c.name })) } : {}) },
-      me: { name: m.name, role: m.role, account: m.userId ? await loginOfUser(m.userId) : '',
+      me: { name: m.name, role: m.role, account: m.userId ? (logins[m.userId] ?? await loginOfUser(m.userId)) : '',
         avatar: m.avatar || '', theme: m.theme || null, character: m.character || '', sheet: m.sheet || null },
       members, npcs, pokemon, teams, battles
     });
@@ -1456,10 +1574,14 @@ app.post('/api/media', express.raw({ type: () => true, limit: MEDIA_MAX }), auth
 /* served by unguessable id (an <audio> tag can't send the auth header); supports Range for seeking/Safari */
 app.get('/media/:id', async (req, res) => {
   try {
-    const f = /^[0-9a-f]{20}$/.test(req.params.id) ? await store.getMedia(req.params.id) : null;
+    const f = /^[0-9a-f]{20}$/.test(req.params.id) ? await mediaFile(req.params.id) : null;
     if (!f) return res.status(404).end();
-    const buf = Buffer.from(f.data), total = buf.length;
-    res.set({ 'Content-Type': f.mime, 'Accept-Ranges': 'bytes', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'private, max-age=86400' });
+    const buf = f.data, total = buf.length;
+    // a file never changes under its id: the browser keeps it and doesn't ask again
+    const etag = `"${req.params.id}"`;
+    res.set({ 'Content-Type': f.mime, 'Accept-Ranges': 'bytes', 'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'private, max-age=31536000, immutable', ETag: etag });
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
     const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
     if (m && (m[1] || m[2])) {
       let start = m[1] ? Number(m[1]) : Math.max(0, total - Number(m[2]));

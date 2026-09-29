@@ -391,6 +391,17 @@ Sprites vêm do repositório público do PokeAPI por URL, não ficam no projeto.
   uma batalha aberta, 5s fora dela ou com a aba em segundo plano. Um pedido por vez (o próximo só sai
   quando o anterior responde); resposta igual à última não redesenha; resposta que cruzou uma gravação
   (`API.pendingWrites`/`API.writeSeq`) é descartada, pra não desfazer a atualização otimista do Mestre
+- **Cache de leitura (não gastar a transferência do banco)**: o polling relia a sala inteira do banco a
+  cada 1–5s por tela e estourou os 5 GB/mês do Neon. Agora cada sala tem uma **versão em memória**
+  (`roomVersion`/`bumpRoom` no `server.js`): **toda requisição que não é GET** muda a versão da sala de
+  quem pediu logo antes de responder (middleware que embrulha `res.end`; sem membro, muda a global).
+  Enquanto a versão não muda, a sala é lida do banco **uma vez** (`roomSnapshot`, guardada como JSON e
+  entregue como cópia) e o `/api/state` responde a todos dali; o cliente manda de volta o
+  `X-State-Version` que recebeu (`API.poll`, só quando tem `lastStateRaw`) e, se nada mudou, ganha
+  **204** vazio. O token da sala também fica em cache até a sala mudar (`memberOfToken`), e os arquivos
+  de `/media` ficam em memória (até 48 MB, `mediaFile`), saindo dela quando apagados, com cache
+  `immutable` + `ETag` no navegador. Consequência: **nunca gravar no banco dentro de um GET, nem fora de
+  uma requisição** — se precisar, chamar `bumpRoom(roomId)` depois. Respostas vão com gzip (`compression`)
 
 ## Como rodar local
 
