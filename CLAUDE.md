@@ -221,6 +221,24 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   reveza os temas dos dois lados (um acaba, entra o outro); com um só, repete. Sem nenhum, toca
   `DEFAULT_BATTLE_THEME` (no `index.html`): a música de batalha contra treinador de Diamond/Pearl/
   Platinum, no YouTube (`qtzPna9yFjg`)
+- **Música sincronizada**: todo mundo ouve o mesmo trecho. A batalha guarda uma linha do tempo em
+  `battle.music = { i, at, paused, pos, dur }` no **relógio do servidor**: o tema `i` da lista começou em
+  `at` (ou está parado em `pos`), e `dur` = duração de cada tema (`kind:ref` → ms). Cada tela calcula onde a
+  música está agora (`musicTarget`, dando voltas na lista pelas durações) e põe o player ali
+  (`alignPlayer`: faixa recém-carregada ou pausada vai no ponto exato; tocando, só pula se desviar 1 s
+  no arquivo / 2 s nos embeds). O START cria a linha do tempo; batalha antiga sem ela ganha uma quando o
+  Mestre a abre. **Só o Mestre** pausa, retoma e pula (`PATCH /api/battles/:id { music: { i, pos, paused } }`
+  — a tela dele calcula `i`/`pos`, o servidor carimba `at = agora − pos`); o jogador vê "pausada pelo
+  Mestre" e só mexe no **próprio volume** (`localStorage`). A duração é medida por quem carrega o tema
+  primeiro e enviada por qualquer um da sala (`POST /api/battles/:id/music-duration`, gravação atômica no
+  JSONB que não pisa em mudança do Mestre); jogador não sobrescreve, o Mestre corrige. O relógio vem no
+  cabeçalho `X-Server-Time` do `/api/state` (`noteServerTime`, fica a amostra de menor ida e volta). Se o
+  navegador segurar o som, aparece "🔊 Ouvir" (clique local). No Spotify sem login o embed só toca prévia de
+  30 s, então ali a sincronia é aproximada
+- **Sons de estágio**: `stat_up.wav` / `stat_down.wav` dos jogos, dos assets do PokéRogue pelo jsDelivr
+  (`SFX_URL`, no volume da música). Na arena ao vivo tocam pra todo mundo quando chega entrada `stage` nova
+  no log (`battleSfx`, um de cada tipo por atualização; o que já estava no log ao abrir fica quieto) e no
+  replay junto do efeito de estágio
 - **HP depois da batalha**: ao encerrar, o servidor guarda em `battle.final` o `battle` (HP/estágios)
   de cada Pokémon dos dois times e **cura as fichas** pra próxima batalha — exceto as que ainda
   estão em outra batalha em andamento. A batalha encerrada é exibida a partir de `final`

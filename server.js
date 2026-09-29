@@ -252,6 +252,14 @@ if (DATABASE_URL) {
       );
     },
     async deleteBattle(id) { await pool.query('DELETE FROM battles WHERE id = $1', [id]); },
+    // how long a theme lasts, in battle.music.dur — on its own, so it never overwrites a change of the GM
+    // made at the same time (and without touching updated_at, which orders the battle list)
+    async setBattleMusicDur(id, key, ms) {
+      await pool.query(
+        `UPDATE battles SET data = jsonb_set(data, '{music}', COALESCE(data->'music', '{}'::jsonb)
+           || jsonb_build_object('dur', COALESCE(data->'music'->'dur', '{}'::jsonb) || jsonb_build_object($2::text, $3::bigint)))
+         WHERE id = $1`, [id, key, ms]);
+    },
     async putMedia(f) {
       await pool.query('INSERT INTO media (id, room_id, owner, mime, data) VALUES ($1,$2,$3,$4,$5)', [f.id, f.roomId, f.owner, f.mime, f.data]);
     },
@@ -388,6 +396,12 @@ if (DATABASE_URL) {
       return b ? { id: b.id, roomId: b.roomId, ...b.data } : null;
     },
     async upsertBattle(id, roomId, data) { mem.battles[id] = { id, roomId, data, updatedAt: Date.now() }; },
+    async setBattleMusicDur(id, key, ms) {
+      const x = mem.battles[id];
+      if (!x) return;
+      const m = x.data.music || {};
+      x.data = { ...x.data, music: { ...m, dur: { ...(m.dur || {}), [key]: ms } } };
+    },
     async deleteBattle(id) { delete mem.battles[id]; },
     async putMedia(f) { mem.media[f.id] = { ...f }; },
     async getMedia(id) { return mem.media[id] || null; },
@@ -1101,7 +1115,7 @@ const hasStarted = b => b.started !== false;
 
 function battleHeader(b, info) {
   return { id: b.id, name: b.name, status: b.status, started: hasStarted(b), winner: b.winner || null, createdAt: b.createdAt, endedAt: b.endedAt,
-    weather: b.weather || null, terrain: b.terrain || null, hazards: b.hazards || { a: {}, b: {} },
+    weather: b.weather || null, terrain: b.terrain || null, hazards: b.hazards || { a: {}, b: {} }, music: b.music || null,
     trainers: { a: info[b.sides.a.owner] || { name: '—', avatar: '' }, b: info[b.sides.b.owner] || { name: '—', avatar: '' } } };
 }
 
@@ -1508,7 +1522,9 @@ app.get('/api/state', auth, async (req, res) => {
     const ver = roomVersion(m.roomId);
     const tag = ver + '.' + crypto.createHash('sha1').update(req.headers.authorization || '').digest('hex').slice(0, 10);
     res.set({ 'Cache-Control': 'no-store', 'X-State-Version': tag });
-    if (req.get('X-State-Version') === tag) return res.status(204).end();
+    // X-Server-Time: the server's clock as it answers, so every screen plays the battle music at the same point
+    const now = () => res.set('X-Server-Time', String(Date.now()));
+    if (req.get('X-State-Version') === tag) { now(); return res.status(204).end(); }
     const snap = await roomSnapshot(m.roomId, ver);
     if (!snap) return res.status(404).json({ error: 'sala_nao_encontrada' });
     const { room, logins } = snap;
@@ -1529,6 +1545,7 @@ app.get('/api/state', auth, async (req, res) => {
     // trainer still without one stands out and can be unbound for recovery
     const members = isGM(m) ? await withLogins(uniqueMembers(snap.members), logins) : [];
     const npcs = isGM(m) ? snap.npcs : [];
+    now();
     res.json({
       room: { id: room.id, name: room.name, gmName: room.gmName,
         ...(isGM(m) ? { banned: room.banned || [], claims: (room.claims || []).map(c => ({ id: c.id, login: c.login, name: c.name })) } : {}) },
@@ -1907,6 +1924,30 @@ app.post('/api/battles', auth, async (req, res) => {
   }
 });
 
+/* How long a theme lasts, measured by whoever's screen loaded it first (anyone in the room: the players too,
+   so the music keeps going the same way for all even with the GM away). Each screen needs the lengths to
+   know which theme is playing now; the GM's screen corrects a length that came wrong. */
+const MUSIC_TRACKS_MAX = 10, MUSIC_MAX_MS = 6 * 3600 * 1000;
+app.post('/api/battles/:id/music-duration', auth, async (req, res) => {
+  try {
+    const m = req.member;
+    const b = await store.getBattle(req.params.id);
+    if (!b) return res.status(404).json({ error: 'nao_encontrado' });
+    if (b.roomId !== m.roomId) return res.status(403).json({ error: 'outra_sala' });
+    const key = String((req.body || {}).key || ''), ms = Math.round(Number((req.body || {}).ms));
+    if (key.length > 300 || !/^(file|audio|youtube|spotify|soundcloud):./.test(key) || !(ms >= 1000 && ms <= MUSIC_MAX_MS)) {
+      return res.status(400).json({ error: 'duracao_invalida' });
+    }
+    const dur = ((b.music || {}).dur) || {};
+    const known = dur[key];
+    const write = b.status === 'active' && (known ? isGM(m) && Math.abs(known - ms) > 1500 : Object.keys(dur).length < 12);
+    if (write) await store.setBattleMusicDur(b.id, key, ms);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e); res.status(500).json({ error: 'erro_interno' });
+  }
+});
+
 app.patch('/api/battles/:id', auth, async (req, res) => {
   try {
     const b = await loadOwnBattle(req, res);
@@ -1919,6 +1960,7 @@ app.patch('/api/battles/:id', auth, async (req, res) => {
       if (data.status === 'ended') return res.status(400).json({ error: 'batalha_encerrada' });
       if (!hasStarted(data)) {
         data.started = true;
+        data.music = { i: 0, pos: 0, paused: false, at: Date.now(), dur: (data.music || {}).dur || {} };   // the music starts with it
         const mons = await store.listPokemon(roomId);
         pushLog(data, { k: 'start' });
         for (const s of SIDES) {
@@ -1929,6 +1971,15 @@ app.patch('/api/battles/:id', auth, async (req, res) => {
           pushLog(data, { k: 'send', side: s, mon: lead });
         }
       }
+    }
+    // the music, the same for everyone: the GM pauses, resumes or skips. The GM's screen works out which
+    // theme and where (i, pos); `at` = when that theme would have started, on the server's clock
+    if (body.music) {
+      if (data.status !== 'active' || !hasStarted(data)) return res.status(400).json({ error: 'musica_invalida' });
+      const i = parseInt(body.music.i, 10), pos = Math.round(Number(body.music.pos));
+      if (!(i >= 0 && i < MUSIC_TRACKS_MAX) || !(pos >= 0 && pos <= MUSIC_MAX_MS)) return res.status(400).json({ error: 'musica_invalida' });
+      const paused = !!body.music.paused;
+      data.music = { dur: {}, ...(data.music || {}), i, pos, paused, at: Date.now() - pos };
     }
     if (body.switch) {
       if (!hasStarted(data)) return res.status(400).json({ error: 'batalha_nao_iniciada' });

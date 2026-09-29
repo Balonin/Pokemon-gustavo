@@ -555,6 +555,7 @@ body.in-room { max-width: none; padding: 12px; }
 .bm-embed iframe { display: block; border: 2px solid var(--outline); max-width: 100%; }
 .bm-embed iframe[src*="spotify"], .bm-embed iframe[src*="soundcloud"] { width: 300px; height: 80px; }
 .bm-ctrl { display: flex; align-items: center; gap: 6px; }
+.bm-ctrl [hidden] { display: none; }   /* pause/skip are the GM's; "Ouvir" only when the browser held the sound */
 .bm-ctrl input[type=range] { width: 90px; padding: 0; box-shadow: none; border: none; background: none; accent-color: var(--gold); }
 @keyframes bm-bob { 50% { transform: translateY(-2px); } }
 @media (prefers-reduced-motion: reduce) { .bm-note { animation: none; } }
@@ -1206,8 +1207,9 @@ label.chk input { width: 16px; height: 16px; flex: none; margin: 2px 0 0; paddin
           <div class="bm-info"><div class="bm-title" id="bmTitle"></div><div class="bm-sub" id="bmSub"></div></div>
           <div class="bm-embed" id="bmEmbed"></div>
           <div class="bm-ctrl">
-            <button class="mini-btn" id="bmToggle" title="Pausar / tocar">⏸</button>
-            <button class="mini-btn" id="bmNext" title="Próximo tema">⏭</button>
+            <button class="mini-btn" id="bmListen" title="O navegador segurou o som até um clique aqui" hidden>🔊 Ouvir</button>
+            <button class="mini-btn" id="bmToggle" title="Pausar pra todos">⏸</button>
+            <button class="mini-btn" id="bmNext" title="Próximo tema, pra todos">⏭</button>
             <input type="range" id="bmVol" min="0" max="100" value="60" aria-label="Volume">
           </div>
         </div>
@@ -3990,19 +3992,41 @@ function renderBattle() {
   if (b) renderArena(b); else renderBattleList();
   renderFieldModal();
   syncBattleMusic();
+  battleSfx(b);
 }
 
 // ===== Battle music =====
-// Each trainer may have a theme. In a running battle the two take turns: when one song ends the
-// other trainer's starts. With one theme it repeats; with none, DEFAULT_BATTLE_THEME plays (if set).
-// Every viewer plays it on their own device; pause/volume are remembered per device.
+// The music is the same for the whole table. The battle keeps one timeline (battle.music, on the server's
+// clock): theme `i` of the list started at `at` — or stands still at `pos` while paused — and `dur` holds how
+// long each theme lasts, measured by whichever screen loaded it first. Every screen works out from that which
+// theme is playing right now and where (musicTarget), and plays it from there: whoever comes in halfway hears
+// the same bar as everyone else. The two trainers' themes take turns; with one it repeats; with none,
+// DEFAULT_BATTLE_THEME plays. Only the GM pauses, resumes and skips (PATCH { music }); each one sets only their
+// own volume, remembered on the device.
 // (same shape as a trainer's theme; for YouTube `ref` is the video id)
 const DEFAULT_BATTLE_THEME = { kind: 'youtube', ref: 'qtzPna9yFjg', title: 'Pokémon Diamond, Pearl & Platinum - Trainer Battle Music (HQ)' };
-const music = { key: '', list: [], idx: 0, paused: false, player: null, token: 0, ended: false };
+const music = {
+  key: '', list: [], idx: -1, player: null, token: 0, timer: null, error: '',
+  anchor: null,     // the timeline while the battle has none of its own (one from before the shared music)
+  blocked: false,   // the browser wouldn't play without a click here
+  localDur: {},     // theme key → ms, as measured on this device
+  reported: {},     // "battleId|key" already sent to the server
+  initSent: {}      // battleId → the GM's screen already gave that old battle its timeline
+};
 
 function musicPrefs() { try { return JSON.parse(localStorage.getItem('gustavo_music') || '{}'); } catch (e) { return {}; } }
 function saveMusicPrefs(p) { try { localStorage.setItem('gustavo_music', JSON.stringify({ ...musicPrefs(), ...p })); } catch (e) {} }
 function musicVolume() { const v = musicPrefs().vol; return typeof v === 'number' ? v : 60; }
+
+// The server's clock, from the state answers (X-Server-Time): the sample with the shortest round trip is the
+// most exact one; after a minute any new sample is taken, so a clock that jumped is followed.
+const clock = { offset: 0, rtt: Infinity, at: 0 };
+function noteServerTime(serverMs, t0, t1) {
+  if (!(serverMs > 0)) return;
+  const rtt = t1 - t0;
+  if (rtt <= clock.rtt || Date.now() - clock.at > 60000) { clock.offset = serverMs - (t0 + t1) / 2; clock.rtt = rtt; clock.at = Date.now(); }
+}
+function serverNow() { return Date.now() + clock.offset; }
 
 function loadScriptOnce(src) {
   loadScriptOnce.cache = loadScriptOnce.cache || {};
@@ -4044,25 +4068,72 @@ function battleThemeList(b) {
   if (!list.length && DEFAULT_BATTLE_THEME) list.push({ ...DEFAULT_BATTLE_THEME, trainer: '' });
   return list;
 }
-// Called after every battle render: (re)starts or stops the music only when what should play changes.
+const themeKey = th => th.kind + ':' + th.ref;
+// how long a theme lasts: as measured here (exact for this device), else as the battle says
+function themeDur(b, th) {
+  const key = themeKey(th);
+  return music.localDur[key] || ((b.music || {}).dur || {})[key] || 0;
+}
+// Where the music is right now: { i: theme, t: ms into it, paused }
+function musicTarget(b) {
+  const list = music.list;
+  if (!list.length) return null;
+  const m = b.music && typeof b.music.at === 'number' ? b.music : music.anchor;
+  let i = ((parseInt(m.i, 10) || 0) % list.length + list.length) % list.length;
+  let t = Math.max(0, m.paused ? (m.pos || 0) : serverNow() - m.at);
+  const durs = list.map(th => themeDur(b, th));
+  if (durs.every(d => d > 0)) t %= durs.reduce((x, y) => x + y, 0);   // whole rounds of the list
+  for (let n = 0; n < list.length && durs[i] > 0 && t >= durs[i]; n++) { t -= durs[i]; i = (i + 1) % list.length; }
+  return { i, t, paused: !!m.paused };
+}
+// A theme's length, once a player here knows it: kept for this device, and sent to the battle if it doesn't
+// have it yet (the GM's screen also corrects one that came wrong)
+function learnDuration(th, ms) {
+  const b = openBattle();
+  if (!b || !(ms > 1000) || !isFinite(ms)) return;
+  const key = themeKey(th), tag = b.id + '|' + key;
+  ms = Math.round(ms);
+  music.localDur[key] = ms;
+  const known = ((b.music || {}).dur || {})[key];
+  if (music.reported[tag] || (known && !(isGM() && Math.abs(known - ms) > 1500))) return;
+  music.reported[tag] = true;
+  API.call('POST', '/battles/' + encodeURIComponent(b.id) + '/music-duration', { key, ms }).catch(() => { delete music.reported[tag]; });
+}
+
+// Called after every battle render and every 2 s while there's music: loads, moves or stops the player only
+// where it differs from where the music should be.
 function syncBattleMusic() {
   const b = battleMode ? openBattle() : null;
   const live = b && b.status === 'active' && battleStarted(b);
   const list = live ? battleThemeList(b) : [];
-  const key = live ? b.id + '|' + list.map(x => x.kind + ':' + x.ref).join(',') : '';
-  if (key === music.key) return;
-  stopMusic();
-  music.key = key;
-  if (!live) { renderMusicBar(); return; }
-  music.list = list;
-  music.paused = !!musicPrefs().off;
-  if (list.length) playMusicAt(0); else renderMusicBar();
+  const key = live ? b.id + '|' + list.map(themeKey).join(',') : '';
+  if (key !== music.key) {
+    stopMusic();
+    music.key = key;
+    music.list = list;
+    music.anchor = { i: 0, pos: 0, paused: false, at: serverNow() };
+  }
+  if (!live || !list.length) { renderMusicBar(); return; }
+  if (!music.timer) music.timer = setInterval(syncBattleMusic, 2000);
+  // a battle from before the shared music: the GM's screen gives it its timeline, from the start
+  if (isGM() && !(b.music && typeof b.music.at === 'number') && !music.initSent[b.id]) {
+    music.initSent[b.id] = true;
+    sendMusic(b, { i: 0, pos: 0, paused: false });
+    return;
+  }
+  const tg = musicTarget(b);
+  if (music.idx !== tg.i) playMusicAt(tg.i); else alignPlayer(tg);
+  renderMusicBar();
 }
 function stopMusic() {
   music.token++;
   destroyMusicPlayer();
+  clearInterval(music.timer);
+  music.timer = null;
   music.list = [];
   music.key = '';
+  music.idx = -1;
+  music.blocked = false;
 }
 function destroyMusicPlayer() {
   const pl = music.player;
@@ -4076,41 +4147,127 @@ function destroyMusicPlayer() {
   const holder = document.getElementById('bmEmbed');
   if (holder) holder.innerHTML = '';
 }
-function nextTheme() { if (music.list.length) playMusicAt((music.idx + 1) % music.list.length); }
+
+// The four players (audio file/link, YouTube, Spotify, SoundCloud) behind one small set of verbs; positions in ms.
+// Spotify and SoundCloud only tell the position by events, so it's carried forward from the last one.
+function playerPos(pl) {
+  if (pl.kind === 'audio') return pl.a.currentTime * 1000;
+  if (pl.kind === 'youtube') return pl.p.getCurrentTime() * 1000;
+  return pl.posAt ? pl.pos + (pl.paused ? 0 : Date.now() - pl.posAt) : null;
+}
+function playerPlaying(pl) {
+  if (pl.kind === 'audio') return !pl.a.paused && !pl.a.ended;
+  if (pl.kind === 'youtube') return [1, 3].includes(pl.p.getPlayerState());   // playing or buffering
+  return !pl.paused;
+}
+function playerSeek(pl, ms) {
+  pl.seekAt = Date.now();
+  if (pl.kind === 'audio') pl.a.currentTime = ms / 1000;
+  else if (pl.kind === 'youtube') pl.p.seekTo(ms / 1000, true);
+  else if (pl.kind === 'spotify') pl.c.seek(ms / 1000);
+  else pl.w.seekTo(ms);
+}
+function playerPlay(pl) {
+  if (pl.kind === 'audio') {
+    pl.a.play().then(() => { if (music.blocked) { music.blocked = false; renderMusicBar(); } })
+      .catch(() => { music.blocked = true; renderMusicBar(); });   // blocked until the user clicks
+  } else if (pl.kind === 'youtube') { pl.playAsked = pl.playAsked || Date.now(); pl.p.playVideo(); }
+  else if (pl.kind === 'spotify') {
+    if (pl.started) { pl.c.resume(); return; }
+    // the first play starts at the beginning: then it goes to where the others are
+    pl.started = true;
+    pl.c.play();
+    setTimeout(() => { const b = openBattle(), tg = b && music.player === pl && musicTarget(b); if (tg && tg.i === music.idx) playerSeek(pl, tg.t); }, 800);
+  } else pl.w.play();
+}
+function playerPause(pl) {
+  if (pl.kind === 'audio') pl.a.pause();
+  else if (pl.kind === 'youtube') pl.p.pauseVideo();
+  else if (pl.kind === 'spotify') pl.c.pause();
+  else pl.w.pause();
+}
+// Puts the player where the music should be: paused or playing, and at the same point as everyone. A player
+// that just loaded, or a paused one, goes to the exact point; one already playing only jumps when it drifted
+// (1 s for an audio file, 2 s for the embeds, whose jumps cost a rebuffer), and a jump lands before the next look.
+function alignPlayer(tg, fresh) {
+  const pl = music.player;
+  if (!pl || !pl.ready) return;
+  try {
+    const pos = playerPos(pl);
+    const off = pos === null ? Infinity : Math.abs(pos - tg.t);
+    const settling = pl.seekAt && Date.now() - pl.seekAt < 4000;
+    if (tg.paused) {
+      if (playerPlaying(pl)) playerPause(pl);
+      if (off > 300 && !settling) playerSeek(pl, tg.t);
+      return;
+    }
+    const drift = fresh ? 300 : (pl.kind === 'audio' ? 1000 : 2000);
+    if ((fresh || !settling) && off > drift) playerSeek(pl, tg.t);
+    if (!playerPlaying(pl) && !music.blocked) playerPlay(pl);
+    // YouTube doesn't say when the browser blocks it: asked to play and still stopped after a while = blocked
+    if (pl.kind === 'youtube' && !playerPlaying(pl) && pl.playAsked && Date.now() - pl.playAsked > 4000 && !music.blocked) {
+      music.blocked = true;
+      renderMusicBar();
+    }
+  } catch (e) {}
+}
+// A theme came to its end here: its length is now known for sure, and the timeline says what comes next
+// (the other trainer's theme, or the same one again from the start).
+function themeEnded(pl) {
+  try { const end = playerPos(pl); if (end > 1000) learnDuration(pl.th, end); } catch (e) {}
+  const b = openBattle();
+  if (!b || music.player !== pl) return;
+  const tg = musicTarget(b);
+  if (tg.i !== music.idx) playMusicAt(tg.i); else alignPlayer(tg, true);
+}
 
 async function playMusicAt(i) {
   destroyMusicPlayer();
   const token = ++music.token;   // a newer call wins over players still loading
   music.idx = i;
-  music.ended = false;
+  music.error = '';
   const th = music.list[i];
-  const vol = musicVolume();
   const holder = document.getElementById('bmEmbed');
+  // where the music is at the moment the player is ready (loading takes a while)
+  const where = () => { const b = openBattle(); const tg = b && token === music.token ? musicTarget(b) : null; return tg && tg.i === i ? tg : null; };
+  const ready = pl => { if (token !== music.token) return; pl.ready = true; const tg = where(); if (tg) alignPlayer(tg, true); };
   renderMusicBar();
   try {
     if (th.kind === 'file' || th.kind === 'audio') {
       const a = new Audio(th.kind === 'file' ? '/media/' + encodeURIComponent(th.ref) : th.ref);
-      a.volume = vol / 100;
-      a.loop = music.list.length === 1;
-      a.onended = nextTheme;
+      a.preload = 'auto';
+      a.volume = musicVolume() / 100;
+      const pl = { kind: 'audio', a, th };
+      music.player = pl;
+      a.onloadedmetadata = () => { if (token !== music.token) return; if (isFinite(a.duration)) learnDuration(th, a.duration * 1000); ready(pl); };
+      a.onended = () => { if (token === music.token) themeEnded(pl); };
       a.onerror = () => showMusicError('Não consegui tocar esse áudio.');
-      music.player = { kind: 'audio', a };
-      if (!music.paused) a.play().catch(() => { music.paused = true; renderMusicBar(); });   // blocked until the user clicks
     } else if (th.kind === 'youtube') {
       await loadYouTubeApi();
       if (token !== music.token) return;
       const div = document.createElement('div');
       holder.appendChild(div);
-      const p = new YT.Player(div, {
+      const tg0 = where();
+      const pl = { kind: 'youtube', th };
+      pl.p = new YT.Player(div, {
         width: 160, height: 90, videoId: th.ref,
-        playerVars: { autoplay: music.paused ? 0 : 1, playsinline: 1, rel: 0 },
+        playerVars: { autoplay: 0, playsinline: 1, rel: 0, start: tg0 ? Math.floor(tg0.t / 1000) : 0 },
         events: {
-          onReady: e => { e.target.setVolume(musicVolume()); if (!music.paused) e.target.playVideo(); },
-          onStateChange: e => { if (e.data === 0 && token === music.token) nextTheme(); },
+          onReady: e => { e.target.setVolume(musicVolume()); ready(pl); },
+          onStateChange: e => {
+            if (token !== music.token) return;
+            if (e.data === 1) {
+              pl.playAsked = 0;
+              const d = pl.p.getDuration();
+              if (d > 0) learnDuration(th, d * 1000);
+              if (music.blocked) { music.blocked = false; renderMusicBar(); }
+            }
+            if (e.data === 0) themeEnded(pl);
+          },
           onError: () => showMusicError('O YouTube não deixou tocar esse vídeo aqui.')
         }
       });
-      music.player = { kind: 'youtube', p };
+      music.player = pl;
     } else if (th.kind === 'spotify') {
       const api = await loadSpotifyApi();
       if (token !== music.token) return;
@@ -4118,11 +4275,14 @@ async function playMusicAt(i) {
       holder.appendChild(div);
       api.createController(div, { uri: 'spotify:' + th.ref.replace('/', ':'), width: '100%', height: 80 }, c => {
         if (token !== music.token) { c.destroy(); return; }
-        music.player = { kind: 'spotify', c };
-        c.addListener('ready', () => { if (!music.paused) c.play(); });
+        const pl = { kind: 'spotify', c, th, pos: 0, posAt: 0, paused: true };
+        music.player = pl;
+        c.addListener('ready', () => ready(pl));
         c.addListener('playback_update', e => {
           const d = e.data || {};
-          if (!music.ended && d.duration > 0 && d.position >= d.duration - 700) { music.ended = true; nextTheme(); }
+          Object.assign(pl, { pos: d.position || 0, posAt: Date.now(), paused: !!d.isPaused });
+          if (d.duration > 0) learnDuration(th, d.duration);
+          if (!pl.ended && d.duration > 0 && d.position >= d.duration - 700) { pl.ended = true; themeEnded(pl); }
         });
       });
     } else if (th.kind === 'soundcloud') {
@@ -4131,28 +4291,46 @@ async function playMusicAt(i) {
       const f = document.createElement('iframe');
       f.allow = 'autoplay';
       f.title = 'SoundCloud';
-      f.src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(th.ref)}&auto_play=${!music.paused}&visual=false&hide_related=true&show_comments=false`;
+      f.src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(th.ref)}&auto_play=false&visual=false&hide_related=true&show_comments=false`;
       holder.appendChild(f);
-      const w = SC.Widget(f);
-      music.player = { kind: 'soundcloud', w };
-      w.bind(SC.Widget.Events.READY, () => { w.setVolume(musicVolume()); if (!music.paused) w.play(); });
-      w.bind(SC.Widget.Events.FINISH, () => { if (token === music.token) nextTheme(); });
+      const w = SC.Widget(f), E = SC.Widget.Events;
+      const pl = { kind: 'soundcloud', w, th, pos: 0, posAt: 0, paused: true };
+      music.player = pl;
+      w.bind(E.READY, () => { w.setVolume(musicVolume()); w.getDuration(d => { if (d > 0) learnDuration(th, d); }); ready(pl); });
+      w.bind(E.PLAY_PROGRESS, e => { pl.pos = e.currentPosition; pl.posAt = Date.now(); });
+      w.bind(E.PLAY, () => { pl.paused = false; if (music.blocked) { music.blocked = false; renderMusicBar(); } });
+      w.bind(E.PAUSE, () => { pl.paused = true; });
+      w.bind(E.FINISH, () => { if (token === music.token) { pl.paused = true; themeEnded(pl); } });
     }
   } catch (e) {
     if (token === music.token) showMusicError('Não consegui carregar o player (' + (THEME_KIND[th.kind] || th.kind) + ').');
   }
 }
-function toggleMusic() {
-  music.paused = !music.paused;
-  saveMusicPrefs({ off: music.paused });
-  const pl = music.player;
-  try {
-    if (!pl) { if (!music.paused && music.list.length) playMusicAt(music.idx); }
-    else if (pl.kind === 'audio') { if (music.paused) pl.a.pause(); else pl.a.play().catch(() => {}); }
-    else if (pl.kind === 'youtube') { if (music.paused) pl.p.pauseVideo(); else pl.p.playVideo(); }
-    else if (pl.kind === 'spotify') { if (music.paused) pl.c.pause(); else pl.c.resume(); }
-    else if (pl.kind === 'soundcloud') { if (music.paused) pl.w.pause(); else pl.w.play(); }
-  } catch (e) {}
+// GM: pause / resume / skip, for everyone. This screen works out where the music is and sends that; the
+// server stamps it with its own clock.
+function musicControl(op) {
+  const b = openBattle();
+  if (!b || !isGM() || !music.list.length) return;
+  const tg = musicTarget(b);
+  const m = op === 'next' ? { i: (tg.i + 1) % music.list.length, pos: 0, paused: tg.paused }
+    : { i: tg.i, pos: Math.round(tg.t), paused: !tg.paused };
+  music.blocked = false;   // a click: the browser lets it play now
+  sendMusic(b, m);
+}
+function sendMusic(b, m) {
+  b.music = { dur: {}, ...(b.music || {}), ...m, at: serverNow() - m.pos };   // at once on this screen
+  syncBattleMusic();
+  API.call('PATCH', '/battles/' + encodeURIComponent(b.id), { music: m }).catch(e => alert(errMsg(e)));
+}
+// "Ouvir": the browser held the sound back until a click on this page; the click lets it through
+function listenMusic() {
+  music.blocked = false;
+  const pl = music.player, b = openBattle();
+  const tg = b && musicTarget(b);
+  if (pl && pl.ready && tg && tg.i === music.idx) {
+    pl.playAsked = 0;
+    try { playerSeek(pl, tg.t); playerPlay(pl); } catch (e) {}
+  }
   renderMusicBar();
 }
 function setMusicVolume(v) {
@@ -4165,7 +4343,7 @@ function setMusicVolume(v) {
     else if (pl.kind === 'soundcloud') pl.w.setVolume(v);
   } catch (e) {}
 }
-function showMusicError(msg) { document.getElementById('bmSub').textContent = msg; }
+function showMusicError(msg) { music.error = msg; document.getElementById('bmSub').textContent = msg; }
 function renderMusicBar() {
   const bar = document.getElementById('battleMusic');
   const b = battleMode ? openBattle() : null;
@@ -4173,14 +4351,59 @@ function renderMusicBar() {
   bar.hidden = false;
   const th = music.list[music.idx];
   const many = music.list.length > 1;
+  const paused = !!(th && musicTarget(b).paused);
+  const gm = isGM();
   document.getElementById('bmTitle').textContent = th ? (th.title || 'Tema de batalha') : 'Sem música';
-  document.getElementById('bmSub').textContent = th
-    ? [th.trainer ? `Tema de ${th.trainer}` : 'Tema padrão', many ? `depois: tema de ${music.list[(music.idx + 1) % music.list.length].trainer}` : '', THEME_KIND[th.kind] || ''].filter(Boolean).join(' · ')
-    : 'Nenhum dos treinadores tem música tema.';
-  document.getElementById('bmToggle').textContent = music.paused ? '▶' : '⏸';
-  document.getElementById('bmToggle').disabled = !th;
-  document.getElementById('bmNext').hidden = !many;
+  document.getElementById('bmSub').textContent = !th ? 'Nenhum dos treinadores tem música tema.'
+    : music.error || [th.trainer ? `Tema de ${th.trainer}` : 'Tema padrão', many ? `depois: tema de ${music.list[(music.idx + 1) % music.list.length].trainer}` : '',
+      THEME_KIND[th.kind] || '', paused ? (gm ? 'pausada pra todos' : 'pausada pelo Mestre') : ''].filter(Boolean).join(' · ');
+  // pausing and skipping are the GM's, for everyone; the volume is each one's own
+  const toggle = document.getElementById('bmToggle');
+  toggle.hidden = !gm;
+  toggle.textContent = paused ? '▶' : '⏸';
+  toggle.title = paused ? 'Tocar pra todos' : 'Pausar pra todos';
+  toggle.disabled = !th;
+  document.getElementById('bmNext').hidden = !gm || !many;
+  document.getElementById('bmListen').hidden = !th || paused || !music.blocked;
   document.getElementById('bmVol').value = musicVolume();
+}
+
+// ===== Sound effects =====
+// The games' own stat up / stat down sounds (from PokéRogue's assets, the way the sprites come from PokeAPI),
+// at the music's volume.
+const SFX_URL = {
+  up: 'https://cdn.jsdelivr.net/gh/pagefaultgames/pokerogue-assets@beta/audio/se/stat_up.wav',
+  down: 'https://cdn.jsdelivr.net/gh/pagefaultgames/pokerogue-assets@beta/audio/se/stat_down.wav'
+};
+const sfxBase = {};
+function loadSfx() {
+  Object.keys(SFX_URL).forEach(k => { if (!sfxBase[k]) { sfxBase[k] = new Audio(SFX_URL[k]); sfxBase[k].preload = 'auto'; } });
+}
+function playSfx(kind) {
+  const vol = musicVolume() / 100;
+  if (!vol || !SFX_URL[kind]) return;
+  try {
+    loadSfx();
+    const a = sfxBase[kind].cloneNode();   // a copy each time, so two in a row overlap instead of cutting
+    a.volume = vol;
+    a.play().catch(() => {});
+  } catch (e) {}
+}
+// Live battle: a stage that rose or fell since the last look plays its sound, on every screen watching.
+// What was already in the log when the battle was opened stays quiet.
+const sfxSeen = {};   // battleId → time of the newest log entry already heard
+function battleSfx(b) {
+  if (!b) return;
+  const log = b.log || [];
+  const last = log.length ? (log[log.length - 1].t || '') : '';
+  const seen = sfxSeen[b.id];
+  sfxSeen[b.id] = last;
+  if (seen === undefined) { loadSfx(); return; }
+  if (b.status !== 'active' || last === seen) return;
+  const fresh = log.filter(e => e.k === 'stage' && (e.t || '') > seen);
+  const up = fresh.some(e => e.delta > 0), down = fresh.some(e => e.delta < 0);
+  if (up) playSfx('up');
+  if (down) setTimeout(() => playSfx('down'), up ? 450 : 0);
 }
 
 // ----- Battle log (entries come from the server; a player's copy is already filtered) -----
@@ -5318,7 +5541,7 @@ function replayFx(f, animate) {
     case 'heal': play(slotOf(fx.side), 'fx-heal', 0.6); float(fx.side, fx.amount, true); break;
     case 'faint': play(slotOf(fx.side), 'fx-faint', 0.8); break;
     case 'burst': play(slotOf(fx.side), 'fx-burst', 0.7); break;
-    case 'stage': play(slotOf(fx.side), 'fx-heal', 0.6); float(fx.side, fx.amount, fx.up); break;
+    case 'stage': play(slotOf(fx.side), 'fx-heal', 0.6); float(fx.side, fx.amount, fx.up); playSfx(fx.up ? 'up' : 'down'); break;
     case 'flash': play(slotOf(fx.side), 'fx-burst', 0.7); break;
   }
 }
@@ -5799,9 +6022,11 @@ const API = {
   async poll(ver) {
     const headers = { Authorization: 'Bearer ' + API.token };
     if (ver) headers['X-State-Version'] = ver;
+    const t0 = Date.now();
     const r = await fetch('/api/state', { headers, cache: 'no-store' });
+    noteServerTime(Number(r.headers.get('X-Server-Time')), t0, Date.now());   // for the battle music
     const tag = r.headers.get('X-State-Version') || '';
-    if (r.status === 204) return { same: true, ver: tag };
+    if (r.status === 204) { await r.text().catch(() => {}); return { same: true, ver: tag }; }   // finish the (empty) answer
     let out = {};
     try { out = await r.json(); } catch (e) {}
     if (!r.ok) throw new Error(out.error || ('http_' + r.status));
@@ -6432,8 +6657,9 @@ async function init() {
     setBattleMode(true, document.getElementById('battleToast').dataset.id);
   });
   document.getElementById('battleToastClose').addEventListener('click', () => { document.getElementById('battleToast').hidden = true; });
-  document.getElementById('bmToggle').addEventListener('click', toggleMusic);
-  document.getElementById('bmNext').addEventListener('click', nextTheme);
+  document.getElementById('bmToggle').addEventListener('click', () => musicControl('toggle'));
+  document.getElementById('bmNext').addEventListener('click', () => musicControl('next'));
+  document.getElementById('bmListen').addEventListener('click', listenMusic);
   document.getElementById('bmVol').addEventListener('input', (e) => setMusicVolume(parseInt(e.target.value, 10)));
   document.getElementById('artClose').addEventListener('click', closeBattleArt);
   window.addEventListener('resize', fitArtCanvas);
