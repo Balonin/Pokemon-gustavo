@@ -3492,7 +3492,9 @@ function setStage(monId, k, delta) {
   const m = allMons.find(x => x.id === monId);
   if (!m) return;
   const stages = { ...((m.battle || {}).stages || {}) };
-  stages[k] = Math.max(-6, Math.min(6, (stages[k] || 0) + delta));
+  const before = stages[k] || 0;
+  stages[k] = Math.max(-6, Math.min(6, before + delta));
+  if (battleMode && stages[k] !== before) sfxNow(stages[k] > before ? 'up' : 'down');   // the GM hears it on the click
   patchBattle(monId, { battle: { ...(m.battle || {}), stages } });
 }
 // status conditions live with the HP in the ficha's battle state (GM only, like the rest)
@@ -4375,20 +4377,45 @@ const SFX_URL = {
   up: 'https://cdn.jsdelivr.net/gh/pagefaultgames/pokerogue-assets@beta/audio/se/stat_up.wav',
   down: 'https://cdn.jsdelivr.net/gh/pagefaultgames/pokerogue-assets@beta/audio/se/stat_down.wav'
 };
-const sfxBase = {};
+// Web Audio: each sound is downloaded and decoded once, and then starts the instant it's asked for (an
+// <audio> element loads its file again every time, which is late enough to notice). Two in a row overlap.
+const sfx = { ctx: null, buf: {}, loading: null };
 function loadSfx() {
-  Object.keys(SFX_URL).forEach(k => { if (!sfxBase[k]) { sfxBase[k] = new Audio(SFX_URL[k]); sfxBase[k].preload = 'auto'; } });
+  if (sfx.loading) return sfx.loading;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return Promise.resolve();
+  try { sfx.ctx = sfx.ctx || new AC(); } catch (e) { return Promise.resolve(); }
+  const ctx = sfx.ctx;
+  sfx.loading = Promise.all(Object.entries(SFX_URL).map(async ([k, url]) => {
+    const data = await (await fetch(url)).arrayBuffer();
+    sfx.buf[k] = await new Promise((ok, no) => ctx.decodeAudioData(data, ok, no));   // the callback form works on old Safari too
+  })).catch(() => { sfx.loading = null; });
+  return sfx.loading;
 }
 function playSfx(kind) {
   const vol = musicVolume() / 100;
   if (!vol || !SFX_URL[kind]) return;
+  const buf = sfx.buf[kind], ctx = sfx.ctx;
+  if (!buf || !ctx) {   // not loaded yet: plays when it arrives, unless that takes so long it'd be out of place
+    const asked = Date.now();
+    loadSfx().then(() => { if (sfx.buf[kind] && Date.now() - asked < 1500) playSfx(kind); });
+    return;
+  }
   try {
-    loadSfx();
-    const a = sfxBase[kind].cloneNode();   // a copy each time, so two in a row overlap instead of cutting
-    a.volume = vol;
-    a.play().catch(() => {});
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    const src = ctx.createBufferSource(), gain = ctx.createGain();
+    src.buffer = buf;
+    gain.gain.value = vol;
+    src.connect(gain).connect(ctx.destination);
+    src.start();
   } catch (e) {}
 }
+// the browser keeps the sound asleep until someone clicks the page: the first click wakes it
+document.addEventListener('pointerdown', () => { if (sfx.ctx && sfx.ctx.state === 'suspended') sfx.ctx.resume().catch(() => {}); }, true);
+// The GM's own click sounds at once (sfxNow); the same change coming back in the log a moment later doesn't
+// sound again.
+const sfxMine = { up: 0, down: 0 };   // until when a sound of each kind already played here counts
+function sfxNow(kind) { playSfx(kind); sfxMine[kind] = Date.now() + 6000; }
 // Live battle: a stage that rose or fell since the last look plays its sound, on every screen watching.
 // What was already in the log when the battle was opened stays quiet.
 const sfxSeen = {};   // battleId → time of the newest log entry already heard
@@ -4401,7 +4428,8 @@ function battleSfx(b) {
   if (seen === undefined) { loadSfx(); return; }
   if (b.status !== 'active' || last === seen) return;
   const fresh = log.filter(e => e.k === 'stage' && (e.t || '') > seen);
-  const up = fresh.some(e => e.delta > 0), down = fresh.some(e => e.delta < 0);
+  const now = Date.now();
+  const up = fresh.some(e => e.delta > 0) && now > sfxMine.up, down = fresh.some(e => e.delta < 0) && now > sfxMine.down;
   if (up) playSfx('up');
   if (down) setTimeout(() => playSfx('down'), up ? 450 : 0);
 }
@@ -6108,19 +6136,67 @@ function applyState(st) {
   updateBattleNotice();
 }
 
-let pollTimer = null, polling = false;
-// Every second while a battle is open, so everyone sees HP and switches almost live; every 5s otherwise
-// and while the tab is in the background. One request at a time: the next goes out when this one answers.
-function pollDelay() { return !document.hidden && battleMode && openBattleId ? 1000 : 5000; }
+let pollTimer = null, polling = false, pollAgain = false;
+// With the server's change stream open (startEvents) a change is fetched the moment it happens, and the
+// polling is only a safety net: every 5s with a battle open, 15s otherwise. Without the stream: every second
+// while a battle is open, so everyone sees HP and switches almost live; every 5s otherwise and while the tab
+// is in the background. One request at a time: the next goes out when this one answers.
+function pollDelay() {
+  const battle = !document.hidden && battleMode && openBattleId;
+  if (events.live) return battle ? 5000 : 15000;
+  return battle ? 1000 : 5000;
+}
 function schedulePoll() {
   clearTimeout(pollTimer);
   pollTimer = session ? setTimeout(pollOnce, pollDelay()) : null;
 }
 async function pollOnce() {
-  if (polling) return;   // the request still on its way schedules the next one
+  // one already on its way may have left before the change that called this one: ask again right after it
+  if (polling) { pollAgain = true; return; }
   polling = true;
   try { await refreshState(); } finally { polling = false; }
+  if (pollAgain) { pollAgain = false; clearTimeout(pollTimer); pollOnce(); return; }
   schedulePoll();
+}
+// The server's change stream (GET /api/events): one line each time something in the room changes, and the
+// state is fetched at once. Read with fetch (it carries the token in the header, never in the address); when
+// it drops, the polling goes back to its fast pace and the stream is opened again a few seconds later.
+const events = { ctl: null, live: false };
+function startEvents() {
+  stopEvents();
+  if (!session || !window.ReadableStream || !window.TextDecoder) return;
+  const ctl = new AbortController(), token = API.token;
+  events.ctl = ctl;
+  (async () => {
+    try {
+      const r = await fetch('/api/events', { headers: { Authorization: 'Bearer ' + token }, signal: ctl.signal, cache: 'no-store' });
+      if (!r.ok || !r.body) throw new Error('events');
+      const reader = r.body.getReader(), dec = new TextDecoder();
+      events.live = true;
+      schedulePoll();
+      let buf = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const end = buf.lastIndexOf('\n\n');
+        if (end < 0) continue;
+        const lines = buf.slice(0, end);
+        buf = buf.slice(end + 2);
+        if (/^data:/m.test(lines)) { clearTimeout(pollTimer); pollOnce(); }
+      }
+    } catch (e) {}
+    if (events.ctl !== ctl) return;   // closed on purpose (left the room, or opened again)
+    events.live = false;
+    schedulePoll();
+    setTimeout(() => { if (events.ctl === ctl && session && API.token === token) startEvents(); }, 3000);
+  })();
+}
+function stopEvents() {
+  const ctl = events.ctl;
+  events.ctl = null;
+  events.live = false;
+  if (ctl) ctl.abort();
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden && session) { clearTimeout(pollTimer); pollOnce(); } });
 async function refreshState() {
@@ -6284,6 +6360,7 @@ function showLobby() {
   document.getElementById('workspaceView').style.display = 'none';
   session = null; currentRoom = null; API.token = null;
   allMembers = []; allNpcs = []; myAvatar = ''; myTheme = null; myCharacter = '';
+  stopEvents();
   stopMusic();
   document.getElementById('battleMusic').hidden = true;
   closeAvatarModal();
@@ -6460,6 +6537,7 @@ async function enterRoom(sess) {
   closeSheet();
   renderSidebar(); renderTeamList();
   schedulePoll();
+  startEvents();
   updateBattleNotice();
   // a trainer from before the login: ask once per campaign, then leave the person alone
   if (!myAccount && !linkPrompted.has(session.roomId)) {

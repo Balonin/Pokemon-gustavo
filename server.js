@@ -171,6 +171,12 @@ if (DATABASE_URL) {
       const r = await pool.query('SELECT id, login, pass FROM users WHERE id = $1', [id]);
       return r.rows[0] || null;
     },
+    // the logins of several accounts in one query: { id: login }
+    async getLogins(ids) {
+      if (!ids.length) return {};
+      const r = await pool.query('SELECT id, login FROM users WHERE id = ANY($1)', [ids]);
+      return Object.fromEntries(r.rows.map(x => [x.id, x.login]));
+    },
     async getUserByLogin(loginKey) {
       const r = await pool.query('SELECT id, login, pass FROM users WHERE login_key = $1', [loginKey]);
       return r.rows[0] || null;
@@ -354,6 +360,7 @@ if (DATABASE_URL) {
     },
     async createUser(u) { mem.users[u.id] = { ...u }; },
     async getUser(id) { return mem.users[id] || null; },
+    async getLogins(ids) { return Object.fromEntries(ids.filter(id => mem.users[id]).map(id => [id, mem.users[id].login])); },
     async getUserByLogin(loginKey) { return Object.values(mem.users).find(u => u.loginKey === loginKey) || null; },
     async setUserPass(id, pass) { if (mem.users[id]) mem.users[id].pass = pass; },
     async addSession(token, userId) { mem.sessions[token] = { token, userId }; },
@@ -450,13 +457,27 @@ function roomVersion(roomId) { return `${BOOT_ID}.${globalVer}.${roomVers.get(ro
 function bumpRoom(roomId) {
   writeCount++;
   if (roomId) roomVers.set(roomId, (roomVers.get(roomId) || 0) + 1); else globalVer++;
+  announce(roomId);
+}
+
+/* Change announcements. Each screen in a room keeps one stream open (GET /api/events, server-sent events),
+   and every change of the room sends it a one-line "something changed": the screen asks for the state at
+   once instead of waiting for its next poll — HP, stages, the stage sounds and the music's pause reach
+   everyone in a moment. Only the fact goes out, never data; the state keeps its usual route and filters.
+   The polling stays as a safety net, slower while the stream is open. */
+const roomStreams = new Map();   // roomId → Set of open responses
+function announce(roomId) {
+  const targets = roomId ? [roomStreams.get(roomId)] : [...roomStreams.values()];
+  for (const set of targets) if (set) for (const res of set) { try { res.write('data: 1\n\n'); } catch (e) {} }
 }
 app.use((req, res, next) => {
   if (req.method === 'GET' || req.method === 'HEAD') return next();
   const end = res.end;
   res.end = function (...args) {
     const join = /^\/api\/rooms\/([^/]+)\/join$/.exec(req.path);
-    bumpRoom(req.member ? req.member.roomId : (join ? join[1] : null));
+    // the lobby's own (account, log in, a new campaign) changes no room that anyone is in
+    const lobby = req.path.startsWith('/api/account/') || req.path === '/api/rooms';
+    if (req.member || join || !lobby) bumpRoom(req.member ? req.member.roomId : (join ? join[1] : null));
     return end.apply(this, args);
   };
   next();
@@ -474,8 +495,7 @@ async function roomSnapshot(roomId, ver) {
       store.listPokemon(roomId), store.listTeams(roomId), store.listBattles(roomId),
       store.listMembers(roomId), store.listNpcs(roomId)]);
     // the login behind each trainer (a login never changes, and binding one is a change of the room)
-    const logins = {};
-    for (const x of members) if (x.userId && !(x.userId in logins)) logins[x.userId] = await loginOfUser(x.userId);
+    const logins = await store.getLogins([...new Set(members.map(x => x.userId).filter(Boolean))]);
     return JSON.stringify({ room, pokemon, teams, battles, members, npcs, logins });
   })();
   if (roomCache.size > 200) roomCache.clear();
@@ -1513,6 +1533,24 @@ async function withLogins(members, logins) {
   }
   return members.map(({ userId, ...x }) => ({ ...x, account: logins[userId] || '' }));
 }
+
+// The change announcements of the room (see "Change announcements"): a stream that stays open.
+app.get('/api/events', auth, (req, res) => {
+  const roomId = req.member.roomId;
+  // no-transform: the gzip would hold the lines back; X-Accel-Buffering: no, for proxies on the way
+  res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', 'X-Accel-Buffering': 'no' });
+  res.flushHeaders();
+  res.write(': ok\n\n');
+  let set = roomStreams.get(roomId);
+  if (!set) roomStreams.set(roomId, set = new Set());
+  set.add(res);
+  const ping = setInterval(() => { try { res.write(': ping\n\n'); } catch (e) {} }, 25000);   // keeps idle proxies from closing it
+  req.on('close', () => {
+    clearInterval(ping);
+    set.delete(res);
+    if (!set.size && roomStreams.get(roomId) === set) roomStreams.delete(roomId);
+  });
+});
 
 // The room from the read cache (see "Read cache"). The answer depends only on the room's version and on
 // who asks (the token), so both make the tag: a screen that sends the tag it already has gets a 204.

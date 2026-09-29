@@ -236,9 +236,11 @@ Funções relevantes em `public/index.html`: `roundStatus`, `evoStepsFor`,
   navegador segurar o som, aparece "🔊 Ouvir" (clique local). No Spotify sem login o embed só toca prévia de
   30 s, então ali a sincronia é aproximada
 - **Sons de estágio**: `stat_up.wav` / `stat_down.wav` dos jogos, dos assets do PokéRogue pelo jsDelivr
-  (`SFX_URL`, no volume da música). Na arena ao vivo tocam pra todo mundo quando chega entrada `stage` nova
-  no log (`battleSfx`, um de cada tipo por atualização; o que já estava no log ao abrir fica quieto) e no
-  replay junto do efeito de estágio
+  (`SFX_URL`, no volume da música), baixados e decodificados uma vez só (Web Audio, `loadSfx`/`playSfx`:
+  `<audio>` recarregava o arquivo a cada toque e atrasava). Na arena ao vivo tocam pra todo mundo quando
+  chega entrada `stage` nova no log (`battleSfx`, um de cada tipo por atualização; o que já estava no log ao
+  abrir fica quieto) e no replay junto do efeito de estágio. **O Mestre ouve no clique** (`setStage` →
+  `sfxNow`), e a mesma mudança voltando no log em até 6s não toca de novo (`sfxMine`)
 - **HP depois da batalha**: ao encerrar, o servidor guarda em `battle.final` o `battle` (HP/estágios)
   de cada Pokémon dos dois times e **cura as fichas** pra próxima batalha — exceto as que ainda
   estão em outra batalha em andamento. A batalha encerrada é exibida a partir de `final`
@@ -405,7 +407,14 @@ Sprites vêm do repositório público do PokeAPI por URL, não ficam no projeto.
   considera abilities como Levitate). O campo `notes` continua salvo na ficha, mas não aparece
 - Texto em canvas pixel art (arte de fim de batalha): usar o `text()` de `drawBattleArt`, que tira
   a suavização — `fillText` direto sai borrado quando a imagem é ampliada
-- O frontend faz polling do servidor (`schedulePoll` → `pollOnce` → `refreshState`): a cada **1s** com
+- **Aviso de mudança (tempo real)**: cada tela dentro da sala deixa aberto `GET /api/events` (server-sent
+  events, lido com `fetch` pra levar o token no cabeçalho — `startEvents`/`stopEvents`). Toda mudança da sala
+  (`bumpRoom` → `announce`) manda só a linha `data: 1`, nunca dado; a tela busca o `/api/state` na hora
+  (`pollOnce`; se já havia um pedido no caminho, pede de novo logo depois dele — `pollAgain`). As rotas do
+  lobby (conta, login, criar campanha) não avisam ninguém. O stream sai sem gzip (`no-transform`) e com
+  ping a cada 25s; caiu, a tela volta pro polling rápido e reabre em 3s
+- O frontend faz polling do servidor (`schedulePoll` → `pollOnce` → `refreshState`). **Com o aviso
+  aberto** é só rede de segurança: 5s com uma batalha aberta, 15s fora dela. **Sem ele**: a cada 1s com
   uma batalha aberta, 5s fora dela ou com a aba em segundo plano. Um pedido por vez (o próximo só sai
   quando o anterior responde); resposta igual à última não redesenha; resposta que cruzou uma gravação
   (`API.pendingWrites`/`API.writeSeq`) é descartada, pra não desfazer a atualização otimista do Mestre
