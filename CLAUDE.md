@@ -431,6 +431,13 @@ aqui. O schema do destino é criado pelo próprio app, então a ordem é:
 
 Os tokens (`members.token`, `user_sessions`) vão junto, então ninguém é deslogado pela mudança.
 
+**Provedor com certificado próprio (Aiven)**: o `pg` 8 lê o `sslmode=require` da URL como verificação
+completa e deixa a URL passar por cima do `ssl` do código, então com a URL crua dá "self-signed certificate
+in certificate chain". Passe o "CA certificate" do painel (texto PEM ou caminho do arquivo):
+`DATABASE_CA` no app (no Render, colar o conteúdo do `ca.pem` como variável), `FROM_CA`/`TO_CA` no script.
+Com ele, `pgOptions` (`db-config.js`) tira o `sslmode` da URL e verifica contra esse certificado; sem ele,
+a conexão é a de sempre. `*.pem` está no `.gitignore`.
+
 ## Ideias ainda não implementadas
 
 - Status Conditions (Burn, Paralysis, Sleep, Poison, Freeze, Confusion...)

@@ -19,10 +19,10 @@ let dbReady = Promise.resolve();   // listen only after tables/columns exist (se
 
 if (DATABASE_URL) {
   const { Pool } = require('pg');
-  const pool = new Pool({
-    connectionString: DATABASE_URL,
-    ssl: DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false }
-  });
+  // DATABASE_CA: the provider's certificate, when it signs with its own authority (Aiven); see db-config.js.
+  // max 6: the most read at once is the room (5 queries), and free plans allow few connections (Aiven: 15),
+  // which a deploy splits for a moment between the old and the new instance
+  const pool = new Pool({ ...require('./db-config').pgOptions(DATABASE_URL, process.env.DATABASE_CA), max: 6 });
 
   async function initDb() {
     await pool.query(`

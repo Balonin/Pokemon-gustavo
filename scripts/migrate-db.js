@@ -8,6 +8,9 @@
      FROM_URL=<origem> TO_URL=<destino> node scripts/migrate-db.js --check   (só olha, não escreve)
      FROM_URL=<origem> TO_URL=<destino> node scripts/migrate-db.js
 
+   Destino no Aiven (ou outro que assina o certificado com autoridade própria): baixe o "CA certificate"
+   do painel e passe junto — DATABASE_CA=./ca.pem no primeiro passo e TO_CA=./ca.pem aqui.
+
    As URLs ficam no seu terminal, nunca no repositório. Copiar duas vezes não duplica nada
    (ON CONFLICT DO NOTHING), então dá pra rodar de novo se cair a conexão no meio. */
 const { Pool } = require('pg');
@@ -24,7 +27,9 @@ if (!FROM_URL || !TO_URL) {
 // pais antes de filhos: o que tem chave estrangeira entra depois de quem ele aponta
 const TABLES = ['users', 'user_sessions', 'rooms', 'members', 'npcs', 'pokemon', 'teams', 'battles', 'media'];
 const BATCH = { media: 5, battles: 50 };   // linhas grandes vão de pouco em pouco
-const connect = url => new Pool({ connectionString: url, ssl: url.includes('localhost') ? false : { rejectUnauthorized: false } });
+// FROM_CA / TO_CA: o certificado do provedor (o ca.pem do Aiven, texto ou caminho do arquivo); veja db-config.js
+const { pgOptions } = require('../db-config');
+const connect = (url, ca) => new Pool(pgOptions(url, ca));
 
 async function columnsOf(pool, table) {
   const r = await pool.query(
@@ -68,7 +73,7 @@ async function copyTable(from, to, table) {
 }
 
 (async () => {
-  const from = connect(FROM_URL), to = connect(TO_URL);
+  const from = connect(FROM_URL, process.env.FROM_CA), to = connect(TO_URL, process.env.TO_CA);
   try {
     console.log('Origem  →', FROM_URL.replace(/:[^:@/]+@/, ':***@'));
     console.log('Destino →', TO_URL.replace(/:[^:@/]+@/, ':***@'));
